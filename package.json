@@ -1,6 +1,6 @@
 {
   "name": "@ashutos1997/ffmpeg-mcp-server",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Deterministic FFmpeg & Media Processing MCP Server for AI coding agents",
   "type": "module",
   "main": "dist/index.js",

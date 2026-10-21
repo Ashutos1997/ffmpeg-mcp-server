@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import { ensureFileExists, ensureOutputDir, runCommand } from "../utils/exec.js";
 import { probeMedia } from "./probe.js";
 
@@ -6,12 +7,15 @@ export interface ThumbnailOptions {
   outputPath: string;
   timestamp?: string; // e.g. "00:00:05", "10", or "midpoint" (default: "00:00:01")
   resolution?: string; // e.g. "1280x720", "640x360"
+  includeBase64?: boolean; // If true, returns base64 image data for multimodal vision
 }
 
 export async function extractThumbnail(options: ThumbnailOptions): Promise<{
   outputPath: string;
   timestampUsed: string;
   commandExecuted: string;
+  base64?: string;
+  mimeType?: string;
 }> {
   const input = await ensureFileExists(options.inputPath);
   const output = await ensureOutputDir(options.outputPath);
@@ -43,9 +47,28 @@ export async function extractThumbnail(options: ThumbnailOptions): Promise<{
 
   await runCommand("ffmpeg", args);
 
+  let base64: string | undefined;
+  let mimeType: string | undefined;
+
+  const shouldInclude = options.includeBase64 ?? true;
+  if (shouldInclude) {
+    try {
+      const buffer = await fs.readFile(output);
+      // Only inline if under 4MB
+      if (buffer.length < 4 * 1024 * 1024) {
+        base64 = buffer.toString("base64");
+        mimeType = output.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg";
+      }
+    } catch {
+      // Base64 encoding optional
+    }
+  }
+
   return {
     outputPath: output,
     timestampUsed: timestamp,
     commandExecuted: `ffmpeg ${args.join(" ")}`,
+    base64,
+    mimeType,
   };
 }

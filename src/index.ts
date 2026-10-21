@@ -13,10 +13,12 @@ import { concatMedia, concatMediaSchema } from "./tools/concat.js";
 import { generateWaveform, generateWaveformSchema } from "./tools/waveform.js";
 import { addSubtitles, addSubtitlesSchema } from "./tools/subtitles.js";
 import { changeSpeed, changeSpeedSchema } from "./tools/speed.js";
+import { reformatAspectRatio, reformatAspectSchema } from "./tools/reformat.js";
+import { trimSilence, trimSilenceSchema } from "./tools/silence.js";
 
 const server = new McpServer({
   name: "ffmpeg-mcp-server",
-  version: "0.2.0",
+  version: "0.3.0",
 });
 
 // Tool 1: Probe Media
@@ -44,7 +46,7 @@ server.tool(
 // Tool 2: Convert Media
 server.tool(
   "media_convert",
-  "Convert video and audio files using rock-solid presets like web-safe MP4 (H.264/AAC), WebM (VP9/Opus), or high-quality palette-based GIF.",
+  "Convert video and audio files using rock-solid presets like web-safe MP4 (H.264/AAC), WebM (VP9/Opus), or high-quality palette-based GIF. Supports Apple Silicon hardware acceleration.",
   {
     inputPath: z.string().describe("Path to the input media file"),
     outputPath: z.string().describe("Destination file path (e.g. ./output.mp4)"),
@@ -67,6 +69,10 @@ server.tool(
       .positive()
       .optional()
       .describe("Target frame rate, e.g. 30, 60, or 15 (great for GIFs)"),
+    hardwareAcceleration: z
+      .boolean()
+      .optional()
+      .describe("Use Apple Silicon VideoToolbox hardware acceleration if available (default: true)"),
   },
   async (args) => {
     try {
@@ -75,7 +81,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text: `Successfully converted media:\nOutput: ${result.outputPath}\nCommand: ${result.commandExecuted}`,
+            text: `Successfully converted media:\nOutput: ${result.outputPath}\nHardware Accelerated: ${result.hardwareAccelerated}\nCommand: ${result.commandExecuted}`,
           },
         ],
       };
@@ -156,10 +162,10 @@ server.tool(
   }
 );
 
-// Tool 5: Extract Thumbnail
+// Tool 5: Extract Thumbnail (Multimodal Vision Supported)
 server.tool(
   "extract_thumbnail",
-  "Extract a high-quality still frame or thumbnail image (PNG or JPG) at a specific timestamp or at the exact midpoint of a video.",
+  "Extract a high-quality still frame or thumbnail image (PNG or JPG). Returns inlined base64 image data so AI vision models can visually inspect the frame directly.",
   {
     inputPath: z.string().describe("Path to the input video file"),
     outputPath: z.string().describe("Destination image file path (e.g. ./thumb.png or ./thumb.jpg)"),
@@ -168,18 +174,24 @@ server.tool(
       .optional()
       .describe("Timestamp to capture, e.g. '00:00:05', '10' (seconds), or 'midpoint' (calculates exact middle of video). Default: '00:00:01'."),
     resolution: z.string().optional().describe("Optional scaled resolution, e.g. '1280x720' or '640x360'"),
+    includeBase64: z.boolean().optional().describe("Whether to include base64 image data in response for AI vision (default: true)"),
   },
   async (args) => {
     try {
       const result = await extractThumbnail(args);
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Successfully extracted thumbnail:\nOutput: ${result.outputPath}\nTimestamp: ${result.timestampUsed}\nCommand: ${result.commandExecuted}`,
-          },
-        ],
-      };
+      const content: any[] = [];
+      if (result.base64 && result.mimeType) {
+        content.push({
+          type: "image",
+          data: result.base64,
+          mimeType: result.mimeType,
+        });
+      }
+      content.push({
+        type: "text",
+        text: `Successfully extracted thumbnail:\nOutput: ${result.outputPath}\nTimestamp: ${result.timestampUsed}\nCommand: ${result.commandExecuted}`,
+      });
+      return { content };
     } catch (err: any) {
       return {
         isError: true,
@@ -192,7 +204,7 @@ server.tool(
 // Tool 6: Compress Video
 server.tool(
   "compress_video",
-  "Smart target-size or CRF video compressor. Shrinks recordings to fit GitHub PR limits (10MB), Discord (25MB), or email attachments with optimal quality.",
+  "Smart target-size or CRF video compressor. Shrinks recordings to fit GitHub PR limits (10MB), Discord (25MB), or email attachments with hardware acceleration.",
   compressMediaSchema.shape,
   async (args) => {
     try {
@@ -201,7 +213,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text: `Successfully compressed video:\nOutput: ${result.outputPath}\nOriginal Size: ${(result.originalSizeBytes / (1024 * 1024)).toFixed(2)} MB\nCompressed Size: ${(result.compressedSizeBytes / (1024 * 1024)).toFixed(2)} MB (${result.compressionRatio} reduction)\nCommand: ${result.commandExecuted}`,
+            text: `Successfully compressed video:\nOutput: ${result.outputPath}\nOriginal Size: ${(result.originalSizeBytes / (1024 * 1024)).toFixed(2)} MB\nCompressed Size: ${(result.compressedSizeBytes / (1024 * 1024)).toFixed(2)} MB (${result.compressionRatio} reduction)\nEncoder: ${result.encoderUsed} (Hardware Accelerated: ${result.hardwareAccelerated})\nCommand: ${result.commandExecuted}`,
           },
         ],
       };
@@ -239,22 +251,27 @@ server.tool(
   }
 );
 
-// Tool 8: Generate Waveform
+// Tool 8: Generate Waveform (Multimodal Vision Supported)
 server.tool(
   "generate_waveform",
-  "Generate a crisp visual audio waveform image (PNG) from any audio or video file. Ideal for UI previews and audio cards.",
+  "Generate a crisp visual audio waveform image (PNG) from any audio or video file. Returns inlined base64 image data so AI vision models can visually inspect the waveform directly.",
   generateWaveformSchema.shape,
   async (args) => {
     try {
       const result = await generateWaveform(args);
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Successfully generated waveform:\nOutput: ${result.outputPath}\nDimensions: ${result.resolution}\nColor: ${result.color}\nCommand: ${result.commandExecuted}`,
-          },
-        ],
-      };
+      const content: any[] = [];
+      if (result.base64) {
+        content.push({
+          type: "image",
+          data: result.base64,
+          mimeType: "image/png",
+        });
+      }
+      content.push({
+        type: "text",
+        text: `Successfully generated waveform:\nOutput: ${result.outputPath}\nDimensions: ${result.resolution}\nColor: ${result.color}\nCommand: ${result.commandExecuted}`,
+      });
+      return { content };
     } catch (err: any) {
       return {
         isError: true,
@@ -314,10 +331,60 @@ server.tool(
   }
 );
 
+// Tool 11: Reformat Aspect Ratio (NEW)
+server.tool(
+  "reformat_aspect_ratio",
+  "Transform horizontal videos into 9:16 vertical reels (Shorts, TikTok, Reels), 1:1 square, or 4:5 portrait with aesthetic blurred background padding or smart center crop.",
+  reformatAspectSchema.shape,
+  async (args) => {
+    try {
+      const result = await reformatAspectRatio(args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Successfully reformatted video aspect ratio:\nOutput: ${result.outputPath}\nTarget Ratio: ${result.targetRatio} (${result.resolution})\nMode: ${result.mode}\nEncoder: ${result.encoderUsed} (Hardware Accelerated: ${result.hardwareAccelerated})\nCommand: ${result.commandExecuted}`,
+          },
+        ],
+      };
+    } catch (err: any) {
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Error reformatting aspect ratio: ${err.message}` }],
+      };
+    }
+  }
+);
+
+// Tool 12: Trim Silence / Dead Air (NEW)
+server.tool(
+  "trim_silence",
+  "Automatically detect and remove dead air or silent pauses from audio recordings, screencasts, voiceovers, or podcasts.",
+  trimSilenceSchema.shape,
+  async (args) => {
+    try {
+      const result = await trimSilence(args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Successfully trimmed silence:\nOutput: ${result.outputPath}\nMode: ${result.mode}\nOriginal Duration: ${result.originalDurationSeconds}s\nNew Duration: ${result.newDurationSeconds}s (Saved ${result.timeSavedSeconds}s of dead air)\nCommand: ${result.commandExecuted}`,
+          },
+        ],
+      };
+    } catch (err: any) {
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Error trimming silence: ${err.message}` }],
+      };
+    }
+  }
+);
+
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("FFmpeg MCP Server running on stdio (10 tools active)");
+  console.error("FFmpeg MCP Server running on stdio (12 tools active, Hardware Acceleration & Multimodal Vision enabled)");
 }
 
 main().catch((err) => {

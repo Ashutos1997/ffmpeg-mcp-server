@@ -12,6 +12,8 @@ import { concatMedia } from "./dist/tools/concat.js";
 import { generateWaveform } from "./dist/tools/waveform.js";
 import { addSubtitles } from "./dist/tools/subtitles.js";
 import { changeSpeed } from "./dist/tools/speed.js";
+import { reformatAspectRatio } from "./dist/tools/reformat.js";
+import { trimSilence } from "./dist/tools/silence.js";
 
 const execAsync = promisify(execFile);
 
@@ -28,7 +30,9 @@ const testFiles = [
   "./test_waveform.png",
   "./test_subtitled.mp4",
   "./test_speed.mp4",
-  "./test_dummy.srt"
+  "./test_dummy.srt",
+  "./test_reformatted.mp4",
+  "./test_silence_cut.mp4"
 ];
 
 function cleanup() {
@@ -44,7 +48,7 @@ async function runTests() {
 
   console.log("Generating synthetic test_input.mp4 (3s)...");
   await execAsync("ffmpeg", [
-    "-f", "lavfi", "-i", "testsrc=duration=3:size=320x240:rate=30",
+    "-f", "lavfi", "-i", "testsrc=duration=3:size=640x360:rate=30",
     "-f", "lavfi", "-i", "sine=frequency=1000:duration=3",
     "-c:v", "libx264", "-c:a", "aac",
     "-pix_fmt", "yuv420p",
@@ -53,7 +57,7 @@ async function runTests() {
 
   // Create second clip for concat
   await execAsync("ffmpeg", [
-    "-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=30",
+    "-f", "lavfi", "-i", "testsrc=duration=2:size=640x360:rate=30",
     "-f", "lavfi", "-i", "sine=frequency=800:duration=2",
     "-c:v", "libx264", "-c:a", "aac",
     "-pix_fmt", "yuv420p",
@@ -68,13 +72,13 @@ async function runTests() {
   const probe = await probeMedia("./test_input.mp4");
   console.log("✓ Duration:", probe.format.durationSeconds, "s");
 
-  console.log("\n=== Testing 2: media_convert (WebM) ===");
-  const webm = await convertMedia({
+  console.log("\n=== Testing 2: media_convert (Hardware Accel / WebM) ===");
+  const conv = await convertMedia({
     inputPath: "./test_input.mp4",
     outputPath: "./test_output.webm",
     preset: "webm",
   });
-  console.log("✓ WebM:", webm.outputPath);
+  console.log("✓ Converted:", conv.outputPath, "HwAccel:", conv.hardwareAccelerated);
 
   console.log("\n=== Testing 3: media_convert (GIF) ===");
   const gif = await convertMedia({
@@ -102,21 +106,21 @@ async function runTests() {
   });
   console.log("✓ Audio:", audio.outputPath);
 
-  console.log("\n=== Testing 6: extract_thumbnail (Midpoint) ===");
+  console.log("\n=== Testing 6: extract_thumbnail (Multimodal Base64) ===");
   const thumb = await extractThumbnail({
     inputPath: "./test_input.mp4",
     outputPath: "./test_thumb.png",
     timestamp: "midpoint",
   });
-  console.log("✓ Thumbnail:", thumb.outputPath);
+  console.log("✓ Thumbnail:", thumb.outputPath, "Base64 Length:", thumb.base64 ? thumb.base64.length : "none");
 
-  console.log("\n=== Testing 7: compress_video ===");
+  console.log("\n=== Testing 7: compress_video (Hardware Accelerated) ===");
   const comp = await compressMedia({
     inputPath: "./test_input.mp4",
     outputPath: "./test_compressed.mp4",
     preset: "github_pr",
   });
-  console.log("✓ Compressed:", comp.outputPath, "Ratio:", comp.compressionRatio);
+  console.log("✓ Compressed:", comp.outputPath, "Encoder:", comp.encoderUsed, "HwAccel:", comp.hardwareAccelerated);
 
   console.log("\n=== Testing 8: concat_media ===");
   const concat = await concatMedia({
@@ -126,13 +130,13 @@ async function runTests() {
   });
   console.log("✓ Concatenated:", concat.outputPath, `(${concat.totalInputs} clips)`);
 
-  console.log("\n=== Testing 9: generate_waveform ===");
+  console.log("\n=== Testing 9: generate_waveform (Multimodal Base64) ===");
   const wave = await generateWaveform({
     inputPath: "./test_input.mp4",
     outputPath: "./test_waveform.png",
     color: "0x6366f1",
   });
-  console.log("✓ Waveform:", wave.outputPath, wave.resolution);
+  console.log("✓ Waveform:", wave.outputPath, wave.resolution, "Base64 Length:", wave.base64 ? wave.base64.length : "none");
 
   console.log("\n=== Testing 10: add_subtitles ===");
   const sub = await addSubtitles({
@@ -151,7 +155,24 @@ async function runTests() {
   });
   console.log("✓ Speed adjusted:", speed.outputPath, `${speed.speedMultiplier}x`);
 
-  console.log("\n🎉 ALL 11 TEST SUITES PASSED FLAWLESSLY!");
+  console.log("\n=== Testing 12: reformat_aspect_ratio (9:16 Vertical Reel with Blurred Background) ===");
+  const reformat = await reformatAspectRatio({
+    inputPath: "./test_input.mp4",
+    outputPath: "./test_reformatted.mp4",
+    targetRatio: "9:16",
+    mode: "blur_background",
+  });
+  console.log("✓ Reformatted:", reformat.outputPath, reformat.resolution, "HwAccel:", reformat.hardwareAccelerated);
+
+  console.log("\n=== Testing 13: trim_silence ===");
+  const silence = await trimSilence({
+    inputPath: "./test_input.mp4",
+    outputPath: "./test_silence_cut.mp4",
+    mode: "start_end",
+  });
+  console.log("✓ Silence trimmed:", silence.outputPath, `Original: ${silence.originalDurationSeconds}s, New: ${silence.newDurationSeconds}s`);
+
+  console.log("\n🎉 ALL 13 TEST SUITES (12 TOOLS + INTEGRATIONS) PASSED FLAWLESSLY!");
   cleanup();
 }
 

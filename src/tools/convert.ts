@@ -1,4 +1,5 @@
 import { ensureFileExists, ensureOutputDir, runCommand } from "../utils/exec.js";
+import { detectHwAccel } from "../utils/hwaccel.js";
 
 export interface ConvertOptions {
   inputPath: string;
@@ -7,17 +8,23 @@ export interface ConvertOptions {
   crf?: number; // Quality: 18-28 (lower is higher quality, default ~23)
   resolution?: string; // e.g. "1920x1080", "1280x720", "854x480"
   fps?: number;
+  hardwareAcceleration?: boolean; // Apple Silicon VideoToolbox acceleration
 }
 
 export async function convertMedia(options: ConvertOptions): Promise<{
   outputPath: string;
   commandExecuted: string;
+  hardwareAccelerated: boolean;
 }> {
   const input = await ensureFileExists(options.inputPath);
   const output = await ensureOutputDir(options.outputPath);
 
+  const hwInfo = await detectHwAccel();
+  const useHw = options.hardwareAcceleration ?? hwInfo.isAvailable;
+
   const preset = options.preset || "auto";
   const args: string[] = ["-y", "-i", input];
+  let isHwUsed = false;
 
   if (preset === "gif") {
     // Generate a high quality palette-based GIF
@@ -30,10 +37,16 @@ export async function convertMedia(options: ConvertOptions): Promise<{
     args.push("-vf", filter, output);
   } else if (preset === "web_mp4" || (preset === "auto" && output.endsWith(".mp4"))) {
     // Universal web-safe H.264 + AAC
-    args.push("-c:v", "libx264");
+    if (useHw && hwInfo.isAvailable) {
+      args.push("-c:v", hwInfo.h264Encoder);
+      args.push("-b:v", "4M");
+      isHwUsed = true;
+    } else {
+      args.push("-c:v", "libx264");
+      args.push("-crf", String(options.crf ?? 23));
+      args.push("-preset", "medium");
+    }
     args.push("-pix_fmt", "yuv420p");
-    args.push("-crf", String(options.crf ?? 23));
-    args.push("-preset", "medium");
     args.push("-c:a", "aac");
     args.push("-b:a", "192k");
     args.push("-movflags", "+faststart"); // Web streaming optimization
@@ -73,5 +86,6 @@ export async function convertMedia(options: ConvertOptions): Promise<{
   return {
     outputPath: output,
     commandExecuted: `ffmpeg ${args.join(" ")}`,
+    hardwareAccelerated: isHwUsed,
   };
 }
