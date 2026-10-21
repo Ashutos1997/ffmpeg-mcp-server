@@ -26,7 +26,7 @@ This server provides 13 typed tools using Zod schemas. The AI passes parameters 
 
 ---
 
-## Included Tools
+## Included Tools (13 Total)
 
 | Tool | Description | Key Parameters |
 | :--- | :--- | :--- |
