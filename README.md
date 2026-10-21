@@ -23,6 +23,11 @@ When AI agents are asked to process media, they frequently hallucinate invalid F
 | **`trim_media`** | Trims media clips. Uses instantaneous lossless stream copy (`-c copy`) by default, or frame-accurate re-encoding. | `inputPath`, `outputPath`, `startTime`, `endTime`, `duration`, `accurateReencode` |
 | **`extract_audio`** | Rips audio tracks from video. Includes `whisper_wav` preset (16kHz mono PCM) optimized for speech-to-text models like Whisper, plus `mp3`, `aac`, and `flac`. | `inputPath`, `outputPath`, `format`, `bitrate` |
 | **`extract_thumbnail`** | Grabs a still image (PNG/JPG) at a specific timestamp, scaled resolution, or automatically calculates the exact `midpoint` of the video. | `inputPath`, `outputPath`, `timestamp`, `resolution` |
+| **`compress_video`** | Smart target-size or CRF compressor. Shrinks recordings to fit GitHub PR limits (10MB), Discord (25MB), or email attachments. | `inputPath`, `outputPath`, `targetSizeMB`, `preset`, `crf`, `maxWidth` |
+| **`concat_media`** | Concatenates multiple video/audio clips sequentially. Supports instantaneous lossless stream copy or normalized re-encoding. | `inputPaths`, `outputPath`, `mode` |
+| **`generate_waveform`** | Generates a crisp visual PNG audio waveform graphic with custom dimensions and hex colors. Perfect for audio cards/UI. | `inputPath`, `outputPath`, `width`, `height`, `color`, `scale` |
+| **`add_subtitles`** | Embeds subtitles from `.srt` or `.vtt` directly into the video container (`mov_text` for MP4, `srt` for MKV) losslessly. | `videoPath`, `subtitlesPath`, `outputPath`, `language`, `title` |
+| **`change_speed`** | Adjusts playback speed (e.g. 2x, 4x timelapse for product demos, 0.5x for slow-mo) with automatic audio pitch normalization. | `inputPath`, `outputPath`, `speed`, `muteAudio` |
 
 ---
 

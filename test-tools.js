@@ -7,16 +7,28 @@ import { convertMedia } from "./dist/tools/convert.js";
 import { trimMedia } from "./dist/tools/trim.js";
 import { extractAudio } from "./dist/tools/audio.js";
 import { extractThumbnail } from "./dist/tools/thumbnail.js";
+import { compressMedia } from "./dist/tools/compress.js";
+import { concatMedia } from "./dist/tools/concat.js";
+import { generateWaveform } from "./dist/tools/waveform.js";
+import { addSubtitles } from "./dist/tools/subtitles.js";
+import { changeSpeed } from "./dist/tools/speed.js";
 
 const execAsync = promisify(execFile);
 
 const testFiles = [
   "./test_input.mp4",
+  "./test_input2.mp4",
   "./test_output.webm",
   "./test_output.gif",
   "./test_trimmed.mp4",
   "./test_audio.wav",
-  "./test_thumb.png"
+  "./test_thumb.png",
+  "./test_compressed.mp4",
+  "./test_concatenated.mp4",
+  "./test_waveform.png",
+  "./test_subtitled.mp4",
+  "./test_speed.mp4",
+  "./test_dummy.srt"
 ];
 
 function cleanup() {
@@ -30,7 +42,7 @@ function cleanup() {
 async function runTests() {
   cleanup();
 
-  console.log("Generating synthetic test_input.mp4 for test suite...");
+  console.log("Generating synthetic test_input.mp4 (3s)...");
   await execAsync("ffmpeg", [
     "-f", "lavfi", "-i", "testsrc=duration=3:size=320x240:rate=30",
     "-f", "lavfi", "-i", "sine=frequency=1000:duration=3",
@@ -39,10 +51,22 @@ async function runTests() {
     "-y", "./test_input.mp4"
   ]);
 
+  // Create second clip for concat
+  await execAsync("ffmpeg", [
+    "-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=30",
+    "-f", "lavfi", "-i", "sine=frequency=800:duration=2",
+    "-c:v", "libx264", "-c:a", "aac",
+    "-pix_fmt", "yuv420p",
+    "-y", "./test_input2.mp4"
+  ]);
+
+  // Create dummy SRT for subtitles test
+  const dummySrt = "1\n00:00:00,500 --> 00:00:02,500\nHello from FFmpeg MCP Server!\n";
+  fs.writeFileSync("./test_dummy.srt", dummySrt, "utf8");
+
   console.log("=== Testing 1: media_probe ===");
   const probe = await probeMedia("./test_input.mp4");
-  console.log("Format duration:", probe.format.durationSeconds);
-  console.log("Video Stream:", probe.videoStreams[0]?.codec, probe.videoStreams[0]?.resolution);
+  console.log("✓ Duration:", probe.format.durationSeconds, "s");
 
   console.log("\n=== Testing 2: media_convert (WebM) ===");
   const webm = await convertMedia({
@@ -50,7 +74,7 @@ async function runTests() {
     outputPath: "./test_output.webm",
     preset: "webm",
   });
-  console.log(webm.outputPath);
+  console.log("✓ WebM:", webm.outputPath);
 
   console.log("\n=== Testing 3: media_convert (GIF) ===");
   const gif = await convertMedia({
@@ -59,7 +83,7 @@ async function runTests() {
     preset: "gif",
     fps: 10,
   });
-  console.log(gif.outputPath);
+  console.log("✓ GIF:", gif.outputPath);
 
   console.log("\n=== Testing 4: trim_media ===");
   const trim = await trimMedia({
@@ -68,7 +92,7 @@ async function runTests() {
     startTime: "00:00:01",
     duration: "1",
   });
-  console.log(trim.outputPath);
+  console.log("✓ Trimmed:", trim.outputPath);
 
   console.log("\n=== Testing 5: extract_audio (Whisper 16kHz WAV) ===");
   const audio = await extractAudio({
@@ -76,7 +100,7 @@ async function runTests() {
     outputPath: "./test_audio.wav",
     format: "whisper_wav",
   });
-  console.log(audio.outputPath);
+  console.log("✓ Audio:", audio.outputPath);
 
   console.log("\n=== Testing 6: extract_thumbnail (Midpoint) ===");
   const thumb = await extractThumbnail({
@@ -84,9 +108,50 @@ async function runTests() {
     outputPath: "./test_thumb.png",
     timestamp: "midpoint",
   });
-  console.log(thumb.outputPath);
+  console.log("✓ Thumbnail:", thumb.outputPath);
 
-  console.log("\n🎉 ALL 6 TOOLS EXECUTED SUCCESSFULLY!");
+  console.log("\n=== Testing 7: compress_video ===");
+  const comp = await compressMedia({
+    inputPath: "./test_input.mp4",
+    outputPath: "./test_compressed.mp4",
+    preset: "github_pr",
+  });
+  console.log("✓ Compressed:", comp.outputPath, "Ratio:", comp.compressionRatio);
+
+  console.log("\n=== Testing 8: concat_media ===");
+  const concat = await concatMedia({
+    inputPaths: ["./test_input.mp4", "./test_input2.mp4"],
+    outputPath: "./test_concatenated.mp4",
+    mode: "lossless",
+  });
+  console.log("✓ Concatenated:", concat.outputPath, `(${concat.totalInputs} clips)`);
+
+  console.log("\n=== Testing 9: generate_waveform ===");
+  const wave = await generateWaveform({
+    inputPath: "./test_input.mp4",
+    outputPath: "./test_waveform.png",
+    color: "0x6366f1",
+  });
+  console.log("✓ Waveform:", wave.outputPath, wave.resolution);
+
+  console.log("\n=== Testing 10: add_subtitles ===");
+  const sub = await addSubtitles({
+    videoPath: "./test_input.mp4",
+    subtitlesPath: "./test_dummy.srt",
+    outputPath: "./test_subtitled.mp4",
+    title: "English Subs",
+  });
+  console.log("✓ Subtitled:", sub.outputPath, `Codec: ${sub.subtitleCodec}`);
+
+  console.log("\n=== Testing 11: change_speed ===");
+  const speed = await changeSpeed({
+    inputPath: "./test_input.mp4",
+    outputPath: "./test_speed.mp4",
+    speed: 2.0,
+  });
+  console.log("✓ Speed adjusted:", speed.outputPath, `${speed.speedMultiplier}x`);
+
+  console.log("\n🎉 ALL 11 TEST SUITES PASSED FLAWLESSLY!");
   cleanup();
 }
 

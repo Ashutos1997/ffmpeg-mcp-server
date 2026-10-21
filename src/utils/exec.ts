@@ -49,6 +49,21 @@ export async function runCommand(
 }
 
 /**
+ * Convenience wrapper for running ffmpeg commands with execution timing.
+ */
+export async function runFfmpeg(args: string[]): Promise<{ command: string; stdout: string; stderr: string; durationSeconds: number }> {
+  const startTime = Date.now();
+  const res = await runCommand("ffmpeg", args);
+  const durationSeconds = Number(((Date.now() - startTime) / 1000).toFixed(2));
+  return {
+    command: `ffmpeg ${args.join(" ")}`,
+    stdout: res.stdout,
+    stderr: res.stderr,
+    durationSeconds,
+  };
+}
+
+/**
  * Validates that an input file exists and is accessible.
  */
 export async function ensureFileExists(filePath: string): Promise<string> {

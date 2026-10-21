@@ -1,6 +1,6 @@
 {
   "name": "ffmpeg-mcp-server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Deterministic FFmpeg & Media Processing MCP Server for AI coding agents",
   "type": "module",
   "main": "dist/index.js",
@@ -15,7 +15,13 @@
     "start": "node dist/index.js",
     "prepare": "npm run build"
   },
-  "keywords": ["mcp", "ffmpeg", "media", "video", "audio"],
+  "keywords": [
+    "mcp",
+    "ffmpeg",
+    "media",
+    "video",
+    "audio"
+  ],
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
