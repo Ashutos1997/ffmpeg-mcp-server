@@ -7,7 +7,7 @@ export interface ThumbnailOptions {
   outputPath: string;
   timestamp?: string; // e.g. "00:00:05", "10", or "midpoint" (default: "00:00:01")
   resolution?: string; // e.g. "1280x720", "640x360"
-  includeBase64?: boolean; // If true, returns base64 image data for multimodal vision
+  includeBase64?: boolean; // If true, returns base64 image data for vision models
 }
 
 export async function extractThumbnail(options: ThumbnailOptions): Promise<{
@@ -36,7 +36,7 @@ export async function extractThumbnail(options: ThumbnailOptions): Promise<{
     "-y",
     "-ss", timestamp,
     "-i", input,
-    "-vframes", "1", // Grab exactly 1 frame
+    "-vframes", "1",
   ];
 
   if (options.resolution) {
@@ -54,13 +54,12 @@ export async function extractThumbnail(options: ThumbnailOptions): Promise<{
   if (shouldInclude) {
     try {
       const buffer = await fs.readFile(output);
-      // Only inline if under 4MB
       if (buffer.length < 4 * 1024 * 1024) {
         base64 = buffer.toString("base64");
         mimeType = output.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg";
       }
     } catch {
-      // Base64 encoding optional
+      // Optional
     }
   }
 

@@ -4,30 +4,30 @@ import { detectHwAccel } from "../utils/hwaccel.js";
 import { probeMedia } from "./probe.js";
 
 export const reformatAspectSchema = z.object({
-  inputPath: z.string().describe("Path to the source video file"),
-  outputPath: z.string().describe("Destination path for the reformatted video"),
+  inputPath: z.string().describe("Path to the source video file."),
+  outputPath: z.string().describe("Destination path for the reformatted video."),
   targetRatio: z
     .enum(["9:16", "1:1", "16:9", "4:5"])
     .default("9:16")
-    .describe("Target aspect ratio. '9:16' (Reels/Shorts/TikTok), '1:1' (Square), '16:9' (Landscape), '4:5' (Portrait Feed)"),
+    .describe("Target aspect ratio: '9:16' for vertical reels, '1:1' for square, '16:9' for horizontal, or '4:5' for portrait. Default: '9:16'."),
   mode: z
     .enum(["blur_background", "fit_pad", "crop_center"])
     .default("blur_background")
-    .describe("Reformatting mode. 'blur_background' adds an aesthetic blurred background of the video itself. 'fit_pad' adds solid colored padding. 'crop_center' zooms and crops the center."),
+    .describe("Format mode: 'blur_background' adds blurred video borders, 'fit_pad' adds solid color padding, and 'crop_center' zooms and crops the center. Default: 'blur_background'."),
   padColor: z
     .string()
     .default("black")
-    .describe("Background color when using 'fit_pad' mode (e.g. 'black', 'white', or hex '0x1e1e2e')"),
+    .describe("Background color for fit_pad mode, such as 'black', 'white', or hex '0x1e1e2e'. Default: 'black'."),
   blurAmount: z
     .number()
     .min(5)
     .max(50)
     .default(20)
-    .describe("Blur intensity (5-50) for 'blur_background' mode. Default: 20"),
+    .describe("Blur strength (5 to 50) for blur_background mode. Default: 20."),
   hardwareAcceleration: z
     .boolean()
     .optional()
-    .describe("Whether to use Apple Silicon VideoToolbox hardware acceleration if available (default: true)"),
+    .describe("Use Apple Silicon VideoToolbox encoding when available. Default: true."),
 });
 
 export type ReformatAspectArgs = z.infer<typeof reformatAspectSchema>;
@@ -51,11 +51,9 @@ export async function reformatAspectRatio(args: ReformatAspectArgs) {
   const dims = RATIO_DIMENSIONS[targetRatio] || RATIO_DIMENSIONS["9:16"];
   const { width: tw, height: th } = dims;
 
-  // Probe media to check if audio exists
   const probeInfo = await probeMedia(input);
   const hasAudio = probeInfo.audioStreams.length > 0;
 
-  // Determine hardware encoder
   const hwInfo = await detectHwAccel();
   const useHw = args.hardwareAcceleration ?? hwInfo.isAvailable;
   const videoEncoder = useHw && hwInfo.isAvailable ? hwInfo.h264Encoder : "libx264";
@@ -69,12 +67,10 @@ export async function reformatAspectRatio(args: ReformatAspectArgs) {
     const filter = `scale=${tw}:${th}:force_original_aspect_ratio=decrease,pad=${tw}:${th}:(ow-iw)/2:(oh-ih)/2:color=${padColor},setsar=1`;
     ffmpegArgs.push("-vf", filter);
   } else {
-    // crop_center
     const filter = `scale=${tw}:${th}:force_original_aspect_ratio=increase,crop=${tw}:${th},setsar=1`;
     ffmpegArgs.push("-vf", filter);
   }
 
-  // Audio handling
   if (hasAudio) {
     if (mode === "blur_background") {
       ffmpegArgs.push("-map", "0:a?", "-c:a", "aac", "-b:a", "192k");
@@ -83,7 +79,6 @@ export async function reformatAspectRatio(args: ReformatAspectArgs) {
     }
   }
 
-  // Video codec parameters
   ffmpegArgs.push("-c:v", videoEncoder);
   if (videoEncoder === "h264_videotoolbox") {
     ffmpegArgs.push("-b:v", "4M", "-pix_fmt", "yuv420p");

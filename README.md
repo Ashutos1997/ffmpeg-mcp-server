@@ -2,61 +2,81 @@
 
 [![CI](https://github.com/Ashutos1997/ffmpeg-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/Ashutos1997/ffmpeg-mcp-server/actions) [![Release](https://img.shields.io/github/v/release/Ashutos1997/ffmpeg-mcp-server?color=blue)](https://github.com/Ashutos1997/ffmpeg-mcp-server/releases) [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE) [![Glama](https://glama.ai/mcp/servers/@Ashutos1997/ffmpeg-mcp-server/badge)](https://glama.ai/mcp/servers/@Ashutos1997/ffmpeg-mcp-server)
 
-A deterministic, high-performance **Model Context Protocol (MCP)** server that gives AI coding agents (Claude Desktop, Cursor, Antigravity) 12 structured tools to inspect, convert, compress, reformat, and process video and audio using local `ffmpeg` and `ffprobe`.
+A Model Context Protocol (MCP) server that gives AI tools access to FFmpeg and FFprobe to process video and audio locally.
 
-Features **Apple Silicon Hardware Acceleration** (`videotoolbox`) and **Multimodal Inlined Vision** (so AI vision models can visually inspect thumbnails and waveforms directly).
+Supports Apple Silicon hardware encoding and returns image previews directly to models with vision.
 
 ---
 
 ## Why This Exists
 
-When AI agents are asked to process media, they frequently hallucinate invalid FFmpeg flags, syntax errors, or incompatible pixel formats. 
+When AI agents process media, they often hallucinate invalid flags, syntax errors, or incompatible pixel formats.
 
-**`ffmpeg-mcp-server`** solves this by providing strongly-typed, schema-validated tools using Zod. The AI simply passes clean parameters (e.g., `{ inputPath: "video.mov", targetRatio: "9:16", mode: "blur_background" }`), and the server generates and executes the exact, optimal FFmpeg command locally on your machine.
-
----
-
-## Key Highlights
-
-* ⚡ **Apple Silicon Hardware Acceleration:** Automatically detects and utilizes `h264_videotoolbox` / `hevc_videotoolbox` on macOS for 5x–10x faster encoding with minimal CPU load.
-* 👁️ **Multimodal Vision Feedback:** Tools like `extract_thumbnail` and `generate_waveform` return inlined base64 image data directly in the MCP response so vision-enabled models can inspect the visual results.
-* 📱 **Social Aspect Ratio Reformatting:** Turn horizontal desktop screen recordings into 9:16 vertical reels (Shorts, TikTok, Reels) with aesthetic blurred background padding.
-* ✂️ **Dead Air & Silence Trimmer:** Instantly detect and trim silence from screencasts, podcasts, and voiceovers.
+This server provides 12 typed tools using Zod schemas. The AI passes parameters (such as `{ inputPath: "video.mov", preset: "web_mp4" }`), and the server runs the valid FFmpeg command locally.
 
 ---
 
-## Included Tools (12 Total)
+## Key Features
+
+* **Hardware Encoding:** Uses VideoToolbox on macOS for faster exports with low CPU usage.
+* **Image Responses:** Returns base64 images so vision models can inspect thumbnails and waveforms.
+* **Social Formats:** Reformats landscape video to 9:16 vertical video with blurred background padding.
+* **Silence Removal:** Detects and trims pauses from speech recordings.
+
+---
+
+## Included Tools
 
 | Tool | Description | Key Parameters |
 | :--- | :--- | :--- |
-| **`media_probe`** | Inspects any audio/video container using `ffprobe`. Returns clean JSON with codecs, resolution, duration, bitrate, and streams. | `inputPath` |
-| **`media_convert`** | Converts video/audio with rock-solid presets: `web_mp4` (universal H.264/yuv420p/faststart), `webm` (VP9/Opus), `gif` (2-pass palette generation), or custom CRF/resolution. Supports hardware acceleration. | `inputPath`, `outputPath`, `preset`, `crf`, `resolution`, `fps`, `hardwareAcceleration` |
-| **`trim_media`** | Trims media clips. Uses instantaneous lossless stream copy (`-c copy`) by default, or frame-accurate re-encoding. | `inputPath`, `outputPath`, `startTime`, `endTime`, `duration`, `accurateReencode` |
-| **`extract_audio`** | Rips audio tracks from video. Includes `whisper_wav` preset (16kHz mono PCM) optimized for speech-to-text models like Whisper, plus `mp3`, `aac`, and `flac`. | `inputPath`, `outputPath`, `format`, `bitrate` |
-| **`extract_thumbnail`** | Grabs a still frame (PNG/JPG) at a timestamp or exact `midpoint`. Inlines base64 image data for AI vision inspection. | `inputPath`, `outputPath`, `timestamp`, `resolution`, `includeBase64` |
-| **`compress_video`** | Smart target-size or CRF compressor with Apple Silicon acceleration. Shrinks recordings to fit GitHub PR limits (10MB), Discord (25MB), or email attachments. | `inputPath`, `outputPath`, `targetSizeMB`, `preset`, `crf`, `maxWidth`, `hardwareAcceleration` |
-| **`reformat_aspect_ratio`** | Transforms videos into 9:16 vertical reels, 1:1 square, or 4:5 portrait with aesthetic blurred background padding, solid padding, or center crop. | `inputPath`, `outputPath`, `targetRatio`, `mode`, `blurAmount`, `padColor` |
-| **`trim_silence`** | Automatically detects and removes dead air or silent pauses from audio recordings, screencasts, and podcasts. | `inputPath`, `outputPath`, `mode`, `thresholdDb`, `minDurationSeconds` |
-| **`concat_media`** | Concatenates multiple video/audio clips sequentially. Supports instantaneous lossless stream copy or normalized re-encoding. | `inputPaths`, `outputPath`, `mode` |
-| **`generate_waveform`** | Generates a crisp visual PNG audio waveform graphic with custom dimensions and hex colors. Inlines image data for AI vision. | `inputPath`, `outputPath`, `width`, `height`, `color`, `scale`, `includeBase64` |
-| **`add_subtitles`** | Embeds subtitles from `.srt` or `.vtt` directly into the video container (`mov_text` for MP4, `srt` for MKV) losslessly. | `videoPath`, `subtitlesPath`, `outputPath`, `language`, `title` |
-| **`change_speed`** | Adjusts playback speed (e.g. 2x, 4x timelapse for product demos, 0.5x for slow-mo) with automatic audio pitch normalization. | `inputPath`, `outputPath`, `speed`, `muteAudio` |
+| **`media_probe`** | Inspects media files with ffprobe. Returns metadata, streams, codecs, resolution, and duration as JSON. | `inputPath` |
+| **`media_convert`** | Converts video and audio formats. Includes presets for web MP4, WebM, and animated GIF. | `inputPath`, `outputPath`, `preset`, `crf`, `resolution`, `fps`, `hardwareAcceleration` |
+| **`trim_media`** | Cuts a segment from a video or audio file using stream copy or re-encoding. | `inputPath`, `outputPath`, `startTime`, `endTime`, `duration`, `accurateReencode` |
+| **`extract_audio`** | Rips audio tracks from video. Includes a 16kHz mono WAV preset for Whisper speech recognition. | `inputPath`, `outputPath`, `format`, `bitrate` |
+| **`extract_thumbnail`** | Captures a still image at a timestamp or midpoint. Returns base64 image data for vision models. | `inputPath`, `outputPath`, `timestamp`, `resolution`, `includeBase64` |
+| **`compress_video`** | Compresses video to fit target sizes (such as GitHub PRs under 10MB or Discord under 25MB). | `inputPath`, `outputPath`, `targetSizeMB`, `preset`, `crf`, `maxWidth`, `hardwareAcceleration` |
+| **`reformat_aspect_ratio`** | Changes video ratio to 9:16 vertical, 1:1 square, or 4:5 portrait with blurred borders or center crop. | `inputPath`, `outputPath`, `targetRatio`, `mode`, `blurAmount`, `padColor` |
+| **`trim_silence`** | Detects and removes silent pauses from recordings. Reports duration and seconds saved. | `inputPath`, `outputPath`, `mode`, `thresholdDb`, `minDurationSeconds` |
+| **`concat_media`** | Joins multiple video or audio files in order using stream copy or re-encoding. | `inputPaths`, `outputPath`, `mode` |
+| **`generate_waveform`** | Generates a PNG waveform image. Returns base64 image data for vision models. | `inputPath`, `outputPath`, `width`, `height`, `color`, `scale`, `includeBase64` |
+| **`add_subtitles`** | Embeds SRT or VTT subtitle tracks into video files without re-encoding video. | `videoPath`, `subtitlesPath`, `outputPath`, `language`, `title` |
+| **`change_speed`** | Adjusts playback speed (such as 2x fast forward or 0.5x slow motion) with pitch correction. | `inputPath`, `outputPath`, `speed`, `muteAudio` |
 
 ---
 
 ## Requirements
 
 * **Node.js** >= 18.0.0
-* **FFmpeg & FFprobe** installed locally on your system:
+* **FFmpeg & FFprobe** installed locally:
   * **macOS:** `brew install ffmpeg`
   * **Linux (Ubuntu/Debian):** `sudo apt update && sudo apt install ffmpeg`
   * **Windows:** `winget install Gyan.FFmpeg` or `choco install ffmpeg`
 
 ---
 
-## Adding to Antigravity
+## Installation
 
-Add the following to your `~/.gemini/config/mcp_config.json`:
+### Antigravity
+
+Add to `~/.gemini/config/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "ffmpeg": {
+      "command": "node",
+      "args": ["/Users/ashj/Desktop/Projects/ffmpeg-mcp-server/dist/index.js"]
+    }
+  }
+}
+```
+
+### Claude Desktop
+
+Add to `claude_desktop_config.json`:
+
+* **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+* **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
 {
@@ -71,24 +91,7 @@ Add the following to your `~/.gemini/config/mcp_config.json`:
 
 ---
 
-## Adding to Claude Desktop
-
-Add the following to your `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "ffmpeg": {
-      "command": "node",
-      "args": ["/Users/ashj/Desktop/Projects/ffmpeg-mcp-server/dist/index.js"]
-    }
-  }
-}
-```
-
----
-
-## Local Development & Testing
+## Local Development
 
 1. **Install dependencies:**
    ```bash
@@ -100,7 +103,7 @@ Add the following to your `claude_desktop_config.json`:
    npm run build
    ```
 
-3. **Run Test Suite:**
+3. **Run tests:**
    ```bash
    node test-tools.js
    ```

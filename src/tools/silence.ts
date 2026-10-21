@@ -3,24 +3,24 @@ import { ensureFileExists, ensureOutputDir, runFfmpeg } from "../utils/exec.js";
 import { probeMedia } from "./probe.js";
 
 export const trimSilenceSchema = z.object({
-  inputPath: z.string().describe("Path to the source audio or video file containing speech or audio to clean up."),
-  outputPath: z.string().describe("Destination path for the trimmed media file without dead air (e.g. './recordings/cleaned.mp4')."),
+  inputPath: z.string().describe("Path to the source audio or video file."),
+  outputPath: z.string().describe("Destination path for the trimmed file (e.g. './recordings/cleaned.mp4')."),
   mode: z
     .enum(["start_end", "all_pauses"])
     .default("start_end")
-    .describe("Trimming behavior: 'start_end' removes silence only at the beginning and end of recording. 'all_pauses' removes silent gaps and dead air throughout the entire recording."),
+    .describe("Trim mode: 'start_end' removes silence at the start and end; 'all_pauses' removes silent pauses across the file. Default: 'start_end'."),
   thresholdDb: z
     .number()
     .min(-60)
     .max(-10)
     .default(-35)
-    .describe("Silence audio threshold in decibels (dB), between -60dB (very quiet background) and -10dB (aggressive). Audio quieter than this threshold is treated as silence. Default: -35dB."),
+    .describe("Volume threshold in decibels, between -60dB and -10dB. Audio quieter than this is treated as silence. Default: -35."),
   minDurationSeconds: z
     .number()
     .min(0.1)
     .max(10)
     .default(0.5)
-    .describe("Minimum silence duration in seconds to trigger trimming (e.g. 0.5s). Pauses shorter than this threshold are preserved to sound natural. Default: 0.5s."),
+    .describe("Minimum silence duration in seconds to trigger a cut. Default: 0.5."),
 });
 
 export type TrimSilenceArgs = z.infer<typeof trimSilenceSchema>;

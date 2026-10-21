@@ -3,13 +3,13 @@ import { z } from "zod";
 import { runFfmpeg, ensureFileExists, ensureOutputDir } from "../utils/exec.js";
 
 export const generateWaveformSchema = z.object({
-  inputPath: z.string().describe("Path to audio or video file"),
-  outputPath: z.string().describe("Target output image path (typically .png)"),
-  width: z.number().int().positive().optional().default(1200).describe("Waveform image width in pixels"),
-  height: z.number().int().positive().optional().default(280).describe("Waveform image height in pixels"),
-  color: z.string().optional().default("0x6366f1").describe("Waveform color in hex format (e.g. 0x6366f1, 0x10b981, white, red)"),
-  scale: z.enum(["lin", "log", "sqrt"]).optional().default("lin").describe("Waveform amplitude scale"),
-  includeBase64: z.boolean().optional().describe("Whether to include base64 image data in response for AI vision (default: true)"),
+  inputPath: z.string().describe("Path to the audio or video file."),
+  outputPath: z.string().describe("Destination path for the PNG image."),
+  width: z.number().int().positive().optional().default(1200).describe("Image width in pixels. Default: 1200."),
+  height: z.number().int().positive().optional().default(280).describe("Image height in pixels. Default: 280."),
+  color: z.string().optional().default("0x6366f1").describe("Waveform color in hex or name (such as '0x6366f1', 'white', or 'black'). Default: '0x6366f1'."),
+  scale: z.enum(["lin", "log", "sqrt"]).optional().default("lin").describe("Amplitude scale: 'lin', 'log', or 'sqrt'. Default: 'lin'."),
+  includeBase64: z.boolean().optional().describe("Return base64 image data in the response for vision models. Default: true."),
 });
 
 export type GenerateWaveformParams = z.infer<typeof generateWaveformSchema>;
@@ -38,7 +38,7 @@ export async function generateWaveform(params: GenerateWaveformParams) {
         base64 = buffer.toString("base64");
       }
     } catch {
-      // Optional base64
+      // Optional
     }
   }
 

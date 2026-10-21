@@ -5,10 +5,10 @@ export interface ConvertOptions {
   inputPath: string;
   outputPath: string;
   preset?: "web_mp4" | "webm" | "gif" | "auto";
-  crf?: number; // Quality: 18-28 (lower is higher quality, default ~23)
-  resolution?: string; // e.g. "1920x1080", "1280x720", "854x480"
+  crf?: number; // Quality: 18-28 (lower is higher quality, default 23)
+  resolution?: string; // e.g. "1920x1080", "1280x720"
   fps?: number;
-  hardwareAcceleration?: boolean; // Apple Silicon VideoToolbox acceleration
+  hardwareAcceleration?: boolean;
 }
 
 export async function convertMedia(options: ConvertOptions): Promise<{
@@ -27,7 +27,6 @@ export async function convertMedia(options: ConvertOptions): Promise<{
   let isHwUsed = false;
 
   if (preset === "gif") {
-    // Generate a high quality palette-based GIF
     const scale = options.resolution
       ? `scale=${options.resolution.replace("x", ":")}:flags=lanczos`
       : "scale=iw:ih:flags=lanczos";
@@ -36,7 +35,6 @@ export async function convertMedia(options: ConvertOptions): Promise<{
 
     args.push("-vf", filter, output);
   } else if (preset === "web_mp4" || (preset === "auto" && output.endsWith(".mp4"))) {
-    // Universal web-safe H.264 + AAC
     if (useHw && hwInfo.isAvailable) {
       args.push("-c:v", hwInfo.h264Encoder);
       args.push("-b:v", "4M");
@@ -49,7 +47,7 @@ export async function convertMedia(options: ConvertOptions): Promise<{
     args.push("-pix_fmt", "yuv420p");
     args.push("-c:a", "aac");
     args.push("-b:a", "192k");
-    args.push("-movflags", "+faststart"); // Web streaming optimization
+    args.push("-movflags", "+faststart");
 
     if (options.resolution) {
       args.push("-vf", `scale=${options.resolution.replace("x", ":")}`);
@@ -59,7 +57,6 @@ export async function convertMedia(options: ConvertOptions): Promise<{
     }
     args.push(output);
   } else if (preset === "webm" || (preset === "auto" && output.endsWith(".webm"))) {
-    // VP9 + Opus for modern open web
     args.push("-c:v", "libvpx-vp9");
     args.push("-crf", String(options.crf ?? 30));
     args.push("-b:v", "0");
@@ -71,7 +68,6 @@ export async function convertMedia(options: ConvertOptions): Promise<{
     }
     args.push(output);
   } else {
-    // Default pass-through or automatic ffmpeg container translation
     if (options.crf) {
       args.push("-crf", String(options.crf));
     }
