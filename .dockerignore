@@ -1,0 +1,11 @@
+node_modules
+dist
+.git
+.github
+test-tools.js
+*.mp4
+*.webm
+*.gif
+*.wav
+*.png
+*.srt
