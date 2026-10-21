@@ -1,3 +1,5 @@
+runtime: "typescript"
+entrypoint: "dist/index.js"
 startCommand:
   type: "stdio"
   command: "node"

@@ -1,5 +1,5 @@
 {
-  "name": "ffmpeg-mcp-server",
+  "name": "@ashutos1997/ffmpeg-mcp-server",
   "version": "0.2.0",
   "description": "Deterministic FFmpeg & Media Processing MCP Server for AI coding agents",
   "type": "module",
@@ -30,5 +30,17 @@
   "devDependencies": {
     "@types/node": "^26.6.5",
     "typescript": "^7.0.2"
+  },
+  "author": "Ashutos1997",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ashutos1997/ffmpeg-mcp-server.git"
+  },
+  "homepage": "https://github.com/Ashutos1997/ffmpeg-mcp-server#readme",
+  "bugs": {
+    "url": "https://github.com/Ashutos1997/ffmpeg-mcp-server/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

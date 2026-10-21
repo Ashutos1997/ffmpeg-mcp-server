@@ -82,7 +82,7 @@ Or, if published / linked via npm:
   "mcpServers": {
     "ffmpeg": {
       "command": "npx",
-      "args": ["-y", "ffmpeg-mcp-server"]
+      "args": ["-y", "@ashutos1997/ffmpeg-mcp-server"]
     }
   }
 }
