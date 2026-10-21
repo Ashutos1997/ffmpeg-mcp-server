@@ -14,6 +14,7 @@ import { addSubtitles } from "./dist/tools/subtitles.js";
 import { changeSpeed } from "./dist/tools/speed.js";
 import { reformatAspectRatio } from "./dist/tools/reformat.js";
 import { trimSilence } from "./dist/tools/silence.js";
+import { createSplitScreen } from "./dist/tools/split.js";
 
 const execAsync = promisify(execFile);
 
@@ -32,7 +33,8 @@ const testFiles = [
   "./test_speed.mp4",
   "./test_dummy.srt",
   "./test_reformatted.mp4",
-  "./test_silence_cut.mp4"
+  "./test_silence_cut.mp4",
+  "./test_split_screen.mp4"
 ];
 
 function cleanup() {
@@ -55,7 +57,7 @@ async function runTests() {
     "-y", "./test_input.mp4"
   ]);
 
-  // Create second clip for concat
+  // Create second clip
   await execAsync("ffmpeg", [
     "-f", "lavfi", "-i", "testsrc=duration=2:size=640x360:rate=30",
     "-f", "lavfi", "-i", "sine=frequency=800:duration=2",
@@ -155,7 +157,7 @@ async function runTests() {
   });
   console.log("✓ Speed adjusted:", speed.outputPath, `${speed.speedMultiplier}x`);
 
-  console.log("\n=== Testing 12: reformat_aspect_ratio (9:16 Vertical Reel with Blurred Background) ===");
+  console.log("\n=== Testing 12: reformat_aspect_ratio ===");
   const reformat = await reformatAspectRatio({
     inputPath: "./test_input.mp4",
     outputPath: "./test_reformatted.mp4",
@@ -170,9 +172,20 @@ async function runTests() {
     outputPath: "./test_silence_cut.mp4",
     mode: "start_end",
   });
-  console.log("✓ Silence trimmed:", silence.outputPath, `Original: ${silence.originalDurationSeconds}s, New: ${silence.newDurationSeconds}s`);
+  console.log("✓ Silence trimmed:", silence.outputPath);
 
-  console.log("\n🎉 ALL 13 TEST SUITES (12 TOOLS + INTEGRATIONS) PASSED FLAWLESSLY!");
+  console.log("\n=== Testing 14: create_split_screen (Top/Bottom Stack + Subtitles) ===");
+  const split = await createSplitScreen({
+    firstVideoPath: "./test_input.mp4",
+    secondVideoPath: "./test_input2.mp4",
+    outputPath: "./test_split_screen.mp4",
+    layout: "vertical_9_16",
+    audioSource: "mix",
+    subtitlesPath: "./test_dummy.srt",
+  });
+  console.log("✓ Split Screen Reel:", split.outputPath, split.resolution, `Subtitles: ${split.subtitlesEmbedded}`, `HwAccel: ${split.hardwareAccelerated}`);
+
+  console.log("\n🎉 ALL 14 TEST SUITES (13 TOOLS + INTEGRATIONS) PASSED FLAWLESSLY!");
   cleanup();
 }
 

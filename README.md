@@ -12,7 +12,7 @@ Supports Apple Silicon hardware encoding and returns image previews directly to 
 
 When AI agents process media, they often hallucinate invalid flags, syntax errors, or incompatible pixel formats.
 
-This server provides 12 typed tools using Zod schemas. The AI passes parameters (such as `{ inputPath: "video.mov", preset: "web_mp4" }`), and the server runs the valid FFmpeg command locally.
+This server provides 13 typed tools using Zod schemas. The AI passes parameters (such as `{ inputPath: "video.mov", preset: "web_mp4" }`), and the server runs the valid FFmpeg command locally.
 
 ---
 
@@ -21,6 +21,7 @@ This server provides 12 typed tools using Zod schemas. The AI passes parameters 
 * **Hardware Encoding:** Uses VideoToolbox on macOS for faster exports with low CPU usage.
 * **Image Responses:** Returns base64 images so vision models can inspect thumbnails and waveforms.
 * **Social Formats:** Reformats landscape video to 9:16 vertical video with blurred background padding.
+* **Split Screen:** Stacks two videos top-and-bottom for Reels and TikTok, with optional subtitles and audio mixing.
 * **Silence Removal:** Detects and trims pauses from speech recordings.
 
 ---
@@ -36,6 +37,7 @@ This server provides 12 typed tools using Zod schemas. The AI passes parameters 
 | **`extract_thumbnail`** | Captures a still image at a timestamp or midpoint. Returns base64 image data for vision models. | `inputPath`, `outputPath`, `timestamp`, `resolution`, `includeBase64` |
 | **`compress_video`** | Compresses video to fit target sizes (such as GitHub PRs under 10MB or Discord under 25MB). | `inputPath`, `outputPath`, `targetSizeMB`, `preset`, `crf`, `maxWidth`, `hardwareAcceleration` |
 | **`reformat_aspect_ratio`** | Changes video ratio to 9:16 vertical, 1:1 square, or 4:5 portrait with blurred borders or center crop. | `inputPath`, `outputPath`, `targetRatio`, `mode`, `blurAmount`, `padColor` |
+| **`create_split_screen`** | Stacks two videos top-and-bottom (9:16 Reels/TikTok) or side-by-side with audio mixing and subtitles. | `firstVideoPath`, `secondVideoPath`, `outputPath`, `layout`, `audioSource`, `subtitlesPath` |
 | **`trim_silence`** | Detects and removes silent pauses from recordings. Reports duration and seconds saved. | `inputPath`, `outputPath`, `mode`, `thresholdDb`, `minDurationSeconds` |
 | **`concat_media`** | Joins multiple video or audio files in order using stream copy or re-encoding. | `inputPaths`, `outputPath`, `mode` |
 | **`generate_waveform`** | Generates a PNG waveform image. Returns base64 image data for vision models. | `inputPath`, `outputPath`, `width`, `height`, `color`, `scale`, `includeBase64` |

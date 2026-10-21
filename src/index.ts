@@ -15,10 +15,11 @@ import { addSubtitles, addSubtitlesSchema } from "./tools/subtitles.js";
 import { changeSpeed, changeSpeedSchema } from "./tools/speed.js";
 import { reformatAspectRatio, reformatAspectSchema } from "./tools/reformat.js";
 import { trimSilence, trimSilenceSchema } from "./tools/silence.js";
+import { createSplitScreen, splitScreenSchema } from "./tools/split.js";
 
 const server = new McpServer({
   name: "ffmpeg-mcp-server",
-  version: "0.3.2",
+  version: "0.4.0",
 });
 
 // Tool 1: Probe Media
@@ -381,10 +382,35 @@ server.tool(
   }
 );
 
+// Tool 13: Create Split Screen
+server.tool(
+  "create_split_screen",
+  "Combine two video files into a split-screen video. Stacks clips vertically (1080x1920 for Reels and TikTok) or places them side-by-side. Supports audio mixing and subtitle embedding.",
+  splitScreenSchema.shape,
+  async (args) => {
+    try {
+      const result = await createSplitScreen(args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Successfully created split-screen video:\nOutput: ${result.outputPath}\nLayout: ${result.layout} (${result.resolution})\nAudio Source: ${result.audioSource}\nSubtitles: ${result.subtitlesEmbedded}\nEncoder: ${result.encoderUsed} (Hardware Accelerated: ${result.hardwareAccelerated})\nCommand: ${result.commandExecuted}`,
+          },
+        ],
+      };
+    } catch (err: any) {
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Error creating split screen: ${err.message}` }],
+      };
+    }
+  }
+);
+
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("FFmpeg MCP Server running on stdio (12 tools active)");
+  console.error("FFmpeg MCP Server running on stdio (13 tools active)");
 }
 
 main().catch((err) => {
