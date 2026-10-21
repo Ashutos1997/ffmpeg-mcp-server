@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.DS_Store
+test_*.mp4
+test_*.webm
+test_*.gif
+test_*.wav
+test_*.png
