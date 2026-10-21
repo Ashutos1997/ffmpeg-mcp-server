@@ -43,7 +43,7 @@ Add the following to your `~/.gemini/config/mcp_config.json`:
   "mcpServers": {
     "ffmpeg": {
       "command": "node",
-      "args": ["/Users/ashj/Desktop/Projects/Test Folder/dist/index.js"]
+      "args": ["/Users/ashj/Desktop/Projects/ffmpeg-mcp-server/dist/index.js"]
     }
   }
 }
@@ -63,7 +63,7 @@ Add the following to your `claude_desktop_config.json`:
   "mcpServers": {
     "ffmpeg": {
       "command": "node",
-      "args": ["/ABSOLUTE/PATH/TO/Test Folder/dist/index.js"]
+      "args": ["/Users/ashj/Desktop/Projects/ffmpeg-mcp-server/dist/index.js"]
     }
   }
 }
