@@ -1,5 +1,7 @@
 # ffmpeg-mcp-server
 
+[![CI](https://github.com/Ashutos1997/ffmpeg-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/Ashutos1997/ffmpeg-mcp-server/actions) [![Release](https://img.shields.io/github/v/release/Ashutos1997/ffmpeg-mcp-server?color=blue)](https://github.com/Ashutos1997/ffmpeg-mcp-server/releases) [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE) [![MCP Standard](https://img.shields.io/badge/MCP-Standard-purple.svg)](https://modelcontextprotocol.io)
+
 A deterministic, rock-solid **Model Context Protocol (MCP)** server that gives AI coding agents (Claude Desktop, Cursor, Antigravity) structured tools to inspect, convert, trim, and process video and audio using local `ffmpeg` and `ffprobe`.
 
 ---
