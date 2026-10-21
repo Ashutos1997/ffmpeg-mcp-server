@@ -3,24 +3,24 @@ import { ensureFileExists, ensureOutputDir, runFfmpeg } from "../utils/exec.js";
 import { probeMedia } from "./probe.js";
 
 export const trimSilenceSchema = z.object({
-  inputPath: z.string().describe("Path to the source audio or video file"),
-  outputPath: z.string().describe("Destination path for the trimmed file"),
+  inputPath: z.string().describe("Path to the source audio or video file containing speech or audio to clean up."),
+  outputPath: z.string().describe("Destination path for the trimmed media file without dead air (e.g. './recordings/cleaned.mp4')."),
   mode: z
     .enum(["start_end", "all_pauses"])
     .default("start_end")
-    .describe("'start_end' removes dead air at the beginning and end of recording. 'all_pauses' strips silent gaps throughout the entire recording."),
+    .describe("Trimming behavior: 'start_end' removes silence only at the beginning and end of recording. 'all_pauses' removes silent gaps and dead air throughout the entire recording."),
   thresholdDb: z
     .number()
     .min(-60)
     .max(-10)
     .default(-35)
-    .describe("Silence volume threshold in dB (e.g. -35). Audio quieter than this is treated as silence."),
+    .describe("Silence audio threshold in decibels (dB), between -60dB (very quiet background) and -10dB (aggressive). Audio quieter than this threshold is treated as silence. Default: -35dB."),
   minDurationSeconds: z
     .number()
     .min(0.1)
     .max(10)
     .default(0.5)
-    .describe("Minimum silence duration to trigger trimming (in seconds). Default: 0.5s"),
+    .describe("Minimum silence duration in seconds to trigger trimming (e.g. 0.5s). Pauses shorter than this threshold are preserved to sound natural. Default: 0.5s."),
 });
 
 export type TrimSilenceArgs = z.infer<typeof trimSilenceSchema>;
@@ -33,7 +33,6 @@ export async function trimSilence(args: TrimSilenceArgs) {
   const thresholdDb = args.thresholdDb ?? -35;
   const minDuration = args.minDurationSeconds ?? 0.5;
 
-  // Probe original file to check audio and duration
   const originalProbe = await probeMedia(input);
   if (originalProbe.audioStreams.length === 0) {
     throw new Error(`Cannot trim silence: input file '${input}' contains no audio streams.`);
@@ -51,7 +50,6 @@ export async function trimSilence(args: TrimSilenceArgs) {
   const ffmpegArgs: string[] = ["-i", input, "-af", audioFilter];
 
   if (isVideo) {
-    // If input is video, keep video stream
     ffmpegArgs.push("-c:v", "copy", "-c:a", "aac", "-b:a", "192k");
   }
 
@@ -59,7 +57,6 @@ export async function trimSilence(args: TrimSilenceArgs) {
 
   const res = await runFfmpeg(ffmpegArgs);
 
-  // Probe output to compute time saved
   let timeSaved = 0;
   let newDuration = 0;
   try {
@@ -67,7 +64,7 @@ export async function trimSilence(args: TrimSilenceArgs) {
     newDuration = newProbe.format.durationSeconds;
     timeSaved = Number(Math.max(0, originalProbe.format.durationSeconds - newDuration).toFixed(2));
   } catch {
-    // Output duration probing optional
+    // Optional
   }
 
   return {
