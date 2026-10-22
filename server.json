@@ -3,7 +3,7 @@
   "name": "io.github.Ashutos1997/ffmpeg-mcp-server",
   "title": "FFmpeg MCP Server",
   "description": "FFmpeg & FFprobe media processing toolkit for video, audio, and social formats",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "repository": {
     "url": "https://github.com/Ashutos1997/ffmpeg-mcp-server",
     "source": "github"
@@ -12,7 +12,7 @@
     {
       "registryType": "npm",
       "identifier": "@ash_j1997/ffmpeg-mcp-server",
-      "version": "0.4.1",
+      "version": "0.4.2",
       "transport": {
         "type": "stdio"
       }
