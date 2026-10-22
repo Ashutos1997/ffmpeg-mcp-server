@@ -1,6 +1,6 @@
 # ffmpeg-mcp-server
 
-[![CI](https://github.com/Ashutos1997/ffmpeg-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/Ashutos1997/ffmpeg-mcp-server/actions) [![Release](https://img.shields.io/github/v/release/Ashutos1997/ffmpeg-mcp-server?color=blue)](https://github.com/Ashutos1997/ffmpeg-mcp-server/releases) [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE) [![Glama](https://glama.ai/mcp/servers/@Ashutos1997/ffmpeg-mcp-server/badge)](https://glama.ai/mcp/servers/@Ashutos1997/ffmpeg-mcp-server)
+[![CI](https://github.com/Ashutos1997/ffmpeg-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/Ashutos1997/ffmpeg-mcp-server/actions) [![Release](https://img.shields.io/github/v/release/Ashutos1997/ffmpeg-mcp-server?color=blue)](https://github.com/Ashutos1997/ffmpeg-mcp-server/releases) [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE) [![npm version](https://img.shields.io/npm/v/@ash_j1997/ffmpeg-mcp-server.svg)](https://www.npmjs.com/package/@ash_j1997/ffmpeg-mcp-server) [![Glama](https://glama.ai/mcp/servers/@Ashutos1997/ffmpeg-mcp-server/badge)](https://glama.ai/mcp/servers/@Ashutos1997/ffmpeg-mcp-server)
 
 A Model Context Protocol (MCP) server that gives AI tools access to FFmpeg and FFprobe to process video and audio locally.
 
@@ -58,38 +58,26 @@ This server provides 13 typed tools using Zod schemas. The AI passes parameters 
 
 ## Installation
 
-### Antigravity
+### Quick Start (Claude Desktop, Cursor, Antigravity)
 
-Add to `~/.gemini/config/mcp_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "ffmpeg": {
-      "command": "node",
-      "args": ["/Users/ashj/Desktop/Projects/ffmpeg-mcp-server/dist/index.js"]
-    }
-  }
-}
-```
-
-### Claude Desktop
-
-Add to `claude_desktop_config.json`:
-
-* **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-* **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+Run directly with `npx` (no manual cloning or building required):
 
 ```json
 {
   "mcpServers": {
     "ffmpeg": {
-      "command": "node",
-      "args": ["/Users/ashj/Desktop/Projects/ffmpeg-mcp-server/dist/index.js"]
+      "command": "npx",
+      "args": ["-y", "@ash_j1997/ffmpeg-mcp-server"]
     }
   }
 }
 ```
+
+#### Configuration File Locations:
+* **Claude Desktop (macOS):** `~/Library/Application Support/Claude/claude_desktop_config.json`
+* **Claude Desktop (Windows):** `%APPDATA%\Claude\claude_desktop_config.json`
+* **Antigravity IDE:** `~/.gemini/config/mcp_config.json`
+* **Cursor / Windsurf:** Add as a stdio server with command `npx` and args `["-y", "@ash_j1997/ffmpeg-mcp-server"]
 
 ---
 
