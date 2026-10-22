@@ -1,5 +1,5 @@
 {
-  "name": "@ashutos1997/ffmpeg-mcp-server",
+  "name": "@ash_j1997/ffmpeg-mcp-server",
   "version": "0.4.1",
   "description": "MCP server for FFmpeg and FFprobe media processing",
   "type": "module",
