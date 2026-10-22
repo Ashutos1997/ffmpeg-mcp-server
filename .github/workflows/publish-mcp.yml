@@ -20,7 +20,7 @@ jobs:
         uses: OtherVibes/mcp-publish-action@v1
         with:
           name: io.github.Ashutos1997/ffmpeg-mcp-server
-          description: "Deterministic FFmpeg media toolkit for AI agents: 13 structured tools for video conversion, smart compression, waveform generation, silence removal, stacked split-screen reels, and audio extraction."
+          description: "FFmpeg & FFprobe media processing toolkit for video, audio, and social formats"
           version: "0.4.1"
           registry_type: npm
           identifier: "@ash_j1997/ffmpeg-mcp-server"
