@@ -42,5 +42,6 @@
   },
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "mcpName": "io.github.Ashutos1997/ffmpeg-mcp-server"
 }

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Ashutos1997/ffmpeg-mcp-server",
+  "title": "FFmpeg MCP Server",
+  "description": "Deterministic FFmpeg media toolkit for AI agents: 13 structured tools for video conversion, smart compression, waveform generation, silence removal, stacked split-screen reels, and audio extraction.",
+  "version": "0.4.1",
+  "repository": {
+    "url": "https://github.com/Ashutos1997/ffmpeg-mcp-server",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@ash_j1997/ffmpeg-mcp-server",
+      "version": "0.4.1",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

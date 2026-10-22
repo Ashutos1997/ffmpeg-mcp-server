@@ -1,0 +1,27 @@
+name: Publish to MCP Registry
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish to MCP Registry
+        uses: OtherVibes/mcp-publish-action@v1
+        with:
+          name: io.github.Ashutos1997/ffmpeg-mcp-server
+          description: "Deterministic FFmpeg media toolkit for AI agents: 13 structured tools for video conversion, smart compression, waveform generation, silence removal, stacked split-screen reels, and audio extraction."
+          version: "0.4.1"
+          registry_type: npm
+          identifier: "@ash_j1997/ffmpeg-mcp-server"
+          transport_type: stdio
