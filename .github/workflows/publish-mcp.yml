@@ -27,4 +27,15 @@ jobs:
         run: mcp-publisher login github-oidc
 
       - name: Publish server.json
-        run: mcp-publisher publish server.json
+        run: |
+          set +e
+          output=$(mcp-publisher publish server.json 2>&1)
+          exit_code=$?
+          echo "$output"
+          if [ $exit_code -ne 0 ]; then
+            if echo "$output" | grep -qi "already exists"; then
+              echo "Notice: Version is already registered in the MCP Registry."
+              exit 0
+            fi
+            exit $exit_code
+          fi
