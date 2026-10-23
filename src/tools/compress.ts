@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { z } from "zod";
-import { runFfmpeg, ensureFileExists, ensureOutputDir } from "../utils/exec.js";
+import { runFfmpeg, ensureFileExists, ensureOutputDir, FfmpegProgress } from "../utils/exec.js";
 import { detectHwAccel } from "../utils/hwaccel.js";
 import { probeMedia } from "./probe.js";
 
@@ -11,12 +11,15 @@ export const compressMediaSchema = z.object({
   preset: z.enum(["github_pr", "discord", "email", "balanced", "high_quality"]).optional().default("balanced").describe("Preset when targetSizeMB is not set: 'github_pr', 'discord', 'email', 'balanced', or 'high_quality'. Default: 'balanced'."),
   crf: z.number().int().min(18).max(45).optional().describe("Quality value between 18 (higher quality) and 45 (smaller file). Overrides preset."),
   maxWidth: z.number().int().positive().optional().describe("Maximum video width in pixels, such as 1280 for 720p. Keeps aspect ratio."),
-  hardwareAcceleration: z.boolean().optional().describe("Use Apple Silicon VideoToolbox encoding when available. Default: true."),
+  hardwareAcceleration: z.boolean().optional().describe("Use hardware-accelerated video encoding (VideoToolbox, NVENC, QSV, etc.) when available. Default: true."),
 });
 
 export type CompressMediaParams = z.infer<typeof compressMediaSchema>;
 
-export async function compressMedia(params: CompressMediaParams) {
+export async function compressMedia(
+  params: CompressMediaParams,
+  options?: { signal?: AbortSignal; onProgress?: (p: FfmpegProgress) => void }
+) {
   const { inputPath, outputPath, targetSizeMB, preset = "balanced", crf, maxWidth, hardwareAcceleration } = params;
   const input = await ensureFileExists(inputPath);
   const output = await ensureOutputDir(outputPath);
@@ -25,7 +28,7 @@ export async function compressMedia(params: CompressMediaParams) {
   const useHw = hardwareAcceleration ?? hwInfo.isAvailable;
 
   const statsBefore = fs.statSync(input);
-  const probe = await probeMedia(input);
+  const probe = await probeMedia(input, { signal: options?.signal });
   const duration = probe.format.durationSeconds || 10;
   const hasAudio = probe.audioStreams.length > 0;
 
@@ -113,7 +116,11 @@ export async function compressMedia(params: CompressMediaParams) {
 
   args.push("-y", output);
 
-  const result = await runFfmpeg(args);
+  const result = await runFfmpeg(args, {
+    signal: options?.signal,
+    onProgress: options?.onProgress,
+    expectedDurationSeconds: duration,
+  });
   const statsAfter = fs.statSync(output);
 
   return {

@@ -1,36 +1,51 @@
-import { ensureFileExists, ensureOutputDir, runCommand } from "../utils/exec.js";
+import { z } from "zod";
+import { ensureFileExists, ensureOutputDir, runFfmpeg, FfmpegProgress } from "../utils/exec.js";
+import { detectHwAccel } from "../utils/hwaccel.js";
 
-export interface TrimOptions {
-  inputPath: string;
-  outputPath: string;
-  startTime: string; // e.g. "00:01:30" or "90" (seconds)
-  endTime?: string;  // e.g. "00:02:00" or "120"
-  duration?: string; // e.g. "30" (seconds)
-  accurateReencode?: boolean; // If false (default), uses fast lossless stream copy (-c copy)
-}
+export const trimMediaSchema = z.object({
+  inputPath: z.string().describe("Path to the source media file to cut."),
+  outputPath: z.string().describe("Destination path for the trimmed output file (e.g. './clip.mp4')."),
+  startTime: z.string().describe("Start timestamp formatted as 'HH:MM:SS' (e.g. '00:01:30') or seconds (e.g. '90')."),
+  endTime: z.string().optional().describe("Optional end timestamp formatted as 'HH:MM:SS' or seconds. Do not combine with duration."),
+  duration: z.string().optional().describe("Optional duration in seconds from startTime (e.g. '30'). If neither endTime nor duration is set, trims to end of file."),
+  accurateReencode: z
+    .boolean()
+    .optional()
+    .describe("Re-encode video for cuts between keyframes. Default: false (uses fast stream copy)."),
+});
 
-export async function trimMedia(options: TrimOptions): Promise<{
+export type TrimMediaParams = z.infer<typeof trimMediaSchema>;
+
+export async function trimMedia(
+  params: TrimMediaParams,
+  options?: { signal?: AbortSignal; onProgress?: (p: FfmpegProgress) => void }
+): Promise<{
   outputPath: string;
   commandExecuted: string;
+  durationSeconds: number;
 }> {
-  const input = await ensureFileExists(options.inputPath);
-  const output = await ensureOutputDir(options.outputPath);
+  const input = await ensureFileExists(params.inputPath);
+  const output = await ensureOutputDir(params.outputPath);
 
   const args: string[] = ["-y"];
 
   // Fast seek before -i
-  args.push("-ss", options.startTime);
+  args.push("-ss", params.startTime);
   args.push("-i", input);
 
-  if (options.endTime) {
-    args.push("-to", options.endTime);
-  } else if (options.duration) {
-    args.push("-t", options.duration);
+  if (params.endTime) {
+    args.push("-to", params.endTime);
+  } else if (params.duration) {
+    args.push("-t", params.duration);
   }
 
-  if (options.accurateReencode) {
-    // Re-encode for frame-accurate cut
-    args.push("-c:v", "libx264", "-c:a", "aac");
+  if (params.accurateReencode) {
+    const hwInfo = await detectHwAccel();
+    if (hwInfo.isAvailable) {
+      args.push("-c:v", hwInfo.h264Encoder, "-b:v", "4M", "-c:a", "aac");
+    } else {
+      args.push("-c:v", "libx264", "-crf", "22", "-preset", "fast", "-c:a", "aac");
+    }
   } else {
     // Lossless instantaneous stream copy
     args.push("-c", "copy");
@@ -38,10 +53,14 @@ export async function trimMedia(options: TrimOptions): Promise<{
 
   args.push(output);
 
-  await runCommand("ffmpeg", args);
+  const res = await runFfmpeg(args, {
+    signal: options?.signal,
+    onProgress: options?.onProgress,
+  });
 
   return {
     outputPath: output,
-    commandExecuted: `ffmpeg ${args.join(" ")}`,
+    commandExecuted: res.command,
+    durationSeconds: res.durationSeconds,
   };
 }

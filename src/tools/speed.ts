@@ -1,5 +1,7 @@
 import { z } from "zod";
-import { runFfmpeg, ensureFileExists, ensureOutputDir } from "../utils/exec.js";
+import { runFfmpeg, ensureFileExists, ensureOutputDir, FfmpegProgress } from "../utils/exec.js";
+import { detectHwAccel } from "../utils/hwaccel.js";
+import { probeMedia } from "./probe.js";
 
 export const changeSpeedSchema = z.object({
   inputPath: z.string().describe("Path to the source video or audio file"),
@@ -25,11 +27,23 @@ function getAtempoFilter(speed: number): string {
   return filters.join(",");
 }
 
-export async function changeSpeed(params: ChangeSpeedParams) {
+export async function changeSpeed(
+  params: ChangeSpeedParams,
+  options?: { signal?: AbortSignal; onProgress?: (p: FfmpegProgress) => void }
+) {
   const { inputPath, outputPath, speed, muteAudio = false } = params;
   const input = await ensureFileExists(inputPath);
   const output = await ensureOutputDir(outputPath);
 
+  let expectedDuration: number | undefined;
+  try {
+    const probe = await probeMedia(input, { signal: options?.signal });
+    if (probe.format.durationSeconds > 0) {
+      expectedDuration = probe.format.durationSeconds / speed;
+    }
+  } catch {}
+
+  const hwInfo = await detectHwAccel();
   const videoFilter = `setpts=${(1 / speed).toFixed(6)}*PTS`;
   const args: string[] = ["-i", input, "-filter:v", videoFilter];
 
@@ -40,14 +54,23 @@ export async function changeSpeed(params: ChangeSpeedParams) {
     args.push("-filter:a", audioFilter);
   }
 
+  if (hwInfo.isAvailable) {
+    args.push("-c:v", hwInfo.h264Encoder, "-b:v", "4M");
+  } else {
+    args.push("-c:v", "libx264", "-crf", "22", "-preset", "fast");
+  }
+
   args.push(
-    "-c:v", "libx264",
     "-pix_fmt", "yuv420p",
     "-movflags", "+faststart",
     "-y", output
   );
 
-  const result = await runFfmpeg(args);
+  const result = await runFfmpeg(args, {
+    signal: options?.signal,
+    onProgress: options?.onProgress,
+    expectedDurationSeconds: expectedDuration,
+  });
 
   return {
     success: true,

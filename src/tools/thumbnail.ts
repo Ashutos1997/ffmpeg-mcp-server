@@ -1,30 +1,40 @@
 import fs from "node:fs/promises";
-import { ensureFileExists, ensureOutputDir, runCommand } from "../utils/exec.js";
+import { z } from "zod";
+import { ensureFileExists, ensureOutputDir, runFfmpeg } from "../utils/exec.js";
 import { probeMedia } from "./probe.js";
 
-export interface ThumbnailOptions {
-  inputPath: string;
-  outputPath: string;
-  timestamp?: string; // e.g. "00:00:05", "10", or "midpoint" (default: "00:00:01")
-  resolution?: string; // e.g. "1280x720", "640x360"
-  includeBase64?: boolean; // If true, returns base64 image data for vision models
-}
+export const extractThumbnailSchema = z.object({
+  inputPath: z.string().describe("Path to the source video file."),
+  outputPath: z.string().describe("Destination image path ending in .png or .jpg (e.g. './thumb.png')."),
+  timestamp: z
+    .string()
+    .optional()
+    .describe("Timestamp to capture, such as '00:00:05', '10', or 'midpoint' for the middle frame. Default: '00:00:01'."),
+  resolution: z.string().optional().describe("Optional scaled size formatted as 'WIDTHxHEIGHT', such as '1280x720'. Defaults to source resolution."),
+  includeBase64: z.boolean().optional().describe("Return base64 image data in response for vision models. Default: true."),
+});
 
-export async function extractThumbnail(options: ThumbnailOptions): Promise<{
+export type ExtractThumbnailParams = z.infer<typeof extractThumbnailSchema>;
+
+export async function extractThumbnail(
+  params: ExtractThumbnailParams,
+  options?: { signal?: AbortSignal }
+): Promise<{
   outputPath: string;
   timestampUsed: string;
   commandExecuted: string;
+  durationSeconds: number;
   base64?: string;
   mimeType?: string;
 }> {
-  const input = await ensureFileExists(options.inputPath);
-  const output = await ensureOutputDir(options.outputPath);
+  const input = await ensureFileExists(params.inputPath);
+  const output = await ensureOutputDir(params.outputPath);
 
-  let timestamp = options.timestamp || "00:00:01";
+  let timestamp = params.timestamp || "00:00:01";
 
   if (timestamp === "midpoint") {
     try {
-      const info = await probeMedia(input);
+      const info = await probeMedia(input, { signal: options?.signal });
       const midpointSeconds = Math.max(0, Math.floor(info.format.durationSeconds / 2));
       timestamp = String(midpointSeconds);
     } catch {
@@ -33,24 +43,23 @@ export async function extractThumbnail(options: ThumbnailOptions): Promise<{
   }
 
   const args: string[] = [
-    "-y",
     "-ss", timestamp,
     "-i", input,
     "-vframes", "1",
   ];
 
-  if (options.resolution) {
-    args.push("-vf", `scale=${options.resolution.replace("x", ":")}`);
+  if (params.resolution) {
+    args.push("-vf", `scale=${params.resolution.replace("x", ":")}`);
   }
 
-  args.push(output);
+  args.push("-y", output);
 
-  await runCommand("ffmpeg", args);
+  const res = await runFfmpeg(args, { signal: options?.signal });
 
   let base64: string | undefined;
   let mimeType: string | undefined;
 
-  const shouldInclude = options.includeBase64 ?? true;
+  const shouldInclude = params.includeBase64 ?? true;
   if (shouldInclude) {
     try {
       const buffer = await fs.readFile(output);
@@ -66,7 +75,8 @@ export async function extractThumbnail(options: ThumbnailOptions): Promise<{
   return {
     outputPath: output,
     timestampUsed: timestamp,
-    commandExecuted: `ffmpeg ${args.join(" ")}`,
+    commandExecuted: res.command,
+    durationSeconds: res.durationSeconds,
     base64,
     mimeType,
   };

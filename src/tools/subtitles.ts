@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { runFfmpeg, ensureFileExists, ensureOutputDir } from "../utils/exec.js";
+import { runFfmpeg, ensureFileExists, ensureOutputDir, FfmpegProgress } from "../utils/exec.js";
 
 export const addSubtitlesSchema = z.object({
   videoPath: z.string().describe("Path to the source video file"),
@@ -11,7 +11,10 @@ export const addSubtitlesSchema = z.object({
 
 export type AddSubtitlesParams = z.infer<typeof addSubtitlesSchema>;
 
-export async function addSubtitles(params: AddSubtitlesParams) {
+export async function addSubtitles(
+  params: AddSubtitlesParams,
+  options?: { signal?: AbortSignal; onProgress?: (p: FfmpegProgress) => void }
+) {
   const { videoPath, subtitlesPath, outputPath, language = "eng", title = "English" } = params;
 
   const video = await ensureFileExists(videoPath);
@@ -32,7 +35,10 @@ export async function addSubtitles(params: AddSubtitlesParams) {
     "-y", output
   ];
 
-  const result = await runFfmpeg(args);
+  const result = await runFfmpeg(args, {
+    signal: options?.signal,
+    onProgress: options?.onProgress,
+  });
 
   return {
     success: true,

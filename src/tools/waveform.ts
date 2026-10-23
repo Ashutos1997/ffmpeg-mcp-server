@@ -9,12 +9,15 @@ export const generateWaveformSchema = z.object({
   height: z.number().int().positive().optional().default(280).describe("Image height in pixels. Default: 280."),
   color: z.string().optional().default("0x6366f1").describe("Waveform color in hex or name (such as '0x6366f1', 'white', or 'black'). Default: '0x6366f1'."),
   scale: z.enum(["lin", "log", "sqrt"]).optional().default("lin").describe("Amplitude scale: 'lin', 'log', or 'sqrt'. Default: 'lin'."),
-  includeBase64: z.boolean().optional().describe("Return base64 image data in the response for vision models. Default: true."),
+  includeBase64: z.boolean().optional().default(true).describe("Return base64 image data in the response for vision models. Default: true."),
 });
 
 export type GenerateWaveformParams = z.infer<typeof generateWaveformSchema>;
 
-export async function generateWaveform(params: GenerateWaveformParams) {
+export async function generateWaveform(
+  params: GenerateWaveformParams,
+  options?: { signal?: AbortSignal }
+) {
   const { inputPath, outputPath, width = 1200, height = 280, color = "0x6366f1", scale = "lin", includeBase64 = true } = params;
   const input = await ensureFileExists(inputPath);
   const output = await ensureOutputDir(outputPath);
@@ -28,7 +31,7 @@ export async function generateWaveform(params: GenerateWaveformParams) {
     "-y", output
   ];
 
-  const result = await runFfmpeg(args);
+  const result = await runFfmpeg(args, { signal: options?.signal });
 
   let base64: string | undefined;
   if (includeBase64) {

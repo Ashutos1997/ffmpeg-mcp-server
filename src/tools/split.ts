@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ensureFileExists, ensureOutputDir, runFfmpeg } from "../utils/exec.js";
+import { ensureFileExists, ensureOutputDir, runFfmpeg, FfmpegProgress } from "../utils/exec.js";
 import { detectHwAccel } from "../utils/hwaccel.js";
 import { probeMedia } from "./probe.js";
 
@@ -22,12 +22,15 @@ export const splitScreenSchema = z.object({
   hardwareAcceleration: z
     .boolean()
     .optional()
-    .describe("Use Apple Silicon VideoToolbox encoding when available. Default: true."),
+    .describe("Use hardware-accelerated video encoding (VideoToolbox, NVENC, QSV, etc.) when available. Default: true."),
 });
 
 export type SplitScreenParams = z.infer<typeof splitScreenSchema>;
 
-export async function createSplitScreen(params: SplitScreenParams) {
+export async function createSplitScreen(
+  params: SplitScreenParams,
+  options?: { signal?: AbortSignal; onProgress?: (p: FfmpegProgress) => void }
+) {
   const {
     firstVideoPath,
     secondVideoPath,
@@ -48,16 +51,18 @@ export async function createSplitScreen(params: SplitScreenParams) {
   }
 
   const [firstProbe, secondProbe] = await Promise.all([
-    probeMedia(firstInput),
-    probeMedia(secondInput),
+    probeMedia(firstInput, { signal: options?.signal }),
+    probeMedia(secondInput, { signal: options?.signal }),
   ]);
 
   const firstHasAudio = firstProbe.audioStreams.length > 0;
   const secondHasAudio = secondProbe.audioStreams.length > 0;
+  const estimatedDuration = Math.max(firstProbe.format.durationSeconds, secondProbe.format.durationSeconds);
 
   const hwInfo = await detectHwAccel();
   const useHw = hardwareAcceleration && hwInfo.isAvailable;
-  const videoEncoder = useHw ? hwInfo.h264Encoder : "libx264";
+  const isHwUsed = useHw;
+  const videoEncoder = isHwUsed ? hwInfo.h264Encoder : "libx264";
 
   // Compute dimensions per tile
   let filter = "";
@@ -113,12 +118,12 @@ export async function createSplitScreen(params: SplitScreenParams) {
 
   if (hasSubtitles) {
     args.push("-map", "2:s");
-    const isMp4 = output.endsWith(".mp4") || output.endsWith(".mov");
+    const isMp4 = output.toLowerCase().endsWith(".mp4") || output.toLowerCase().endsWith(".mov");
     args.push("-c:s", isMp4 ? "mov_text" : "srt");
   }
 
   args.push("-c:v", videoEncoder);
-  if (videoEncoder === "h264_videotoolbox") {
+  if (isHwUsed) {
     args.push("-b:v", "4M", "-pix_fmt", "yuv420p");
   } else {
     args.push("-crf", "22", "-preset", "fast", "-pix_fmt", "yuv420p");
@@ -130,7 +135,11 @@ export async function createSplitScreen(params: SplitScreenParams) {
 
   args.push("-movflags", "+faststart", "-y", output);
 
-  const res = await runFfmpeg(args);
+  const res = await runFfmpeg(args, {
+    signal: options?.signal,
+    onProgress: options?.onProgress,
+    expectedDurationSeconds: estimatedDuration,
+  });
 
   return {
     success: true,
@@ -140,7 +149,7 @@ export async function createSplitScreen(params: SplitScreenParams) {
     audioSource,
     subtitlesEmbedded: hasSubtitles,
     encoderUsed: videoEncoder,
-    hardwareAccelerated: videoEncoder.includes("videotoolbox"),
+    hardwareAccelerated: isHwUsed,
     commandExecuted: res.command,
     durationSeconds: res.durationSeconds,
   };

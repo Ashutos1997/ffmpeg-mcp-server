@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { z } from "zod";
-import { runFfmpeg, ensureFileExists, ensureOutputDir } from "../utils/exec.js";
+import { runFfmpeg, ensureFileExists, ensureOutputDir, FfmpegProgress } from "../utils/exec.js";
+import { detectHwAccel } from "../utils/hwaccel.js";
 
 export const concatMediaSchema = z.object({
   inputPaths: z.array(z.string()).min(2).describe("List of media files to concatenate in sequential order"),
@@ -12,7 +13,10 @@ export const concatMediaSchema = z.object({
 
 export type ConcatMediaParams = z.infer<typeof concatMediaSchema>;
 
-export async function concatMedia(params: ConcatMediaParams) {
+export async function concatMedia(
+  params: ConcatMediaParams,
+  options?: { signal?: AbortSignal; onProgress?: (p: FfmpegProgress) => void }
+) {
   const { inputPaths, outputPath, mode = "lossless" } = params;
 
   const resolvedInputs: string[] = [];
@@ -34,8 +38,13 @@ export async function concatMedia(params: ConcatMediaParams) {
     if (mode === "lossless") {
       args.push("-c", "copy");
     } else {
+      const hwInfo = await detectHwAccel();
+      if (hwInfo.isAvailable) {
+        args.push("-c:v", hwInfo.h264Encoder, "-b:v", "4M");
+      } else {
+        args.push("-c:v", "libx264", "-crf", "22", "-preset", "fast");
+      }
       args.push(
-        "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
         "-b:a", "192k",
@@ -45,7 +54,10 @@ export async function concatMedia(params: ConcatMediaParams) {
 
     args.push("-y", output);
 
-    const result = await runFfmpeg(args);
+    const result = await runFfmpeg(args, {
+      signal: options?.signal,
+      onProgress: options?.onProgress,
+    });
 
     return {
       success: true,

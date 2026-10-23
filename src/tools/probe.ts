@@ -1,4 +1,11 @@
+import { z } from "zod";
 import { ensureFileExists, runCommand } from "../utils/exec.js";
+
+export const probeMediaSchema = z.object({
+  inputPath: z.string().describe("Path to the media file to inspect (e.g. './video.mp4')"),
+});
+
+export type ProbeMediaParams = z.infer<typeof probeMediaSchema>;
 
 export interface ProbeSummary {
   filePath: string;
@@ -38,7 +45,10 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-export async function probeMedia(inputPath: string): Promise<ProbeSummary> {
+export async function probeMedia(
+  inputPath: string,
+  options?: { signal?: AbortSignal }
+): Promise<ProbeSummary> {
   const resolvedPath = await ensureFileExists(inputPath);
 
   const args = [
@@ -49,7 +59,7 @@ export async function probeMedia(inputPath: string): Promise<ProbeSummary> {
     resolvedPath,
   ];
 
-  const { stdout } = await runCommand("ffprobe", args);
+  const { stdout } = await runCommand("ffprobe", args, { signal: options?.signal });
   const data = JSON.parse(stdout);
 
   const format = data.format || {};

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ensureFileExists, ensureOutputDir, runFfmpeg } from "../utils/exec.js";
+import { ensureFileExists, ensureOutputDir, runFfmpeg, FfmpegProgress } from "../utils/exec.js";
 import { detectHwAccel } from "../utils/hwaccel.js";
 import { probeMedia } from "./probe.js";
 
@@ -27,7 +27,7 @@ export const reformatAspectSchema = z.object({
   hardwareAcceleration: z
     .boolean()
     .optional()
-    .describe("Use Apple Silicon VideoToolbox encoding when available. Default: true."),
+    .describe("Use hardware-accelerated video encoding (VideoToolbox, NVENC, QSV, etc.) when available. Default: true."),
 });
 
 export type ReformatAspectArgs = z.infer<typeof reformatAspectSchema>;
@@ -39,7 +39,10 @@ const RATIO_DIMENSIONS: Record<string, { width: number; height: number }> = {
   "4:5": { width: 1080, height: 1350 },
 };
 
-export async function reformatAspectRatio(args: ReformatAspectArgs) {
+export async function reformatAspectRatio(
+  args: ReformatAspectArgs,
+  options?: { signal?: AbortSignal; onProgress?: (p: FfmpegProgress) => void }
+) {
   const input = await ensureFileExists(args.inputPath);
   const output = await ensureOutputDir(args.outputPath);
 
@@ -51,12 +54,14 @@ export async function reformatAspectRatio(args: ReformatAspectArgs) {
   const dims = RATIO_DIMENSIONS[targetRatio] || RATIO_DIMENSIONS["9:16"];
   const { width: tw, height: th } = dims;
 
-  const probeInfo = await probeMedia(input);
+  const probeInfo = await probeMedia(input, { signal: options?.signal });
   const hasAudio = probeInfo.audioStreams.length > 0;
+  const duration = probeInfo.format.durationSeconds;
 
   const hwInfo = await detectHwAccel();
   const useHw = args.hardwareAcceleration ?? hwInfo.isAvailable;
-  const videoEncoder = useHw && hwInfo.isAvailable ? hwInfo.h264Encoder : "libx264";
+  const isHwUsed = useHw && hwInfo.isAvailable;
+  const videoEncoder = isHwUsed ? hwInfo.h264Encoder : "libx264";
 
   const ffmpegArgs: string[] = ["-i", input];
 
@@ -80,7 +85,7 @@ export async function reformatAspectRatio(args: ReformatAspectArgs) {
   }
 
   ffmpegArgs.push("-c:v", videoEncoder);
-  if (videoEncoder === "h264_videotoolbox") {
+  if (isHwUsed) {
     ffmpegArgs.push("-b:v", "4M", "-pix_fmt", "yuv420p");
   } else {
     ffmpegArgs.push("-crf", "22", "-preset", "fast", "-pix_fmt", "yuv420p");
@@ -88,7 +93,11 @@ export async function reformatAspectRatio(args: ReformatAspectArgs) {
 
   ffmpegArgs.push("-movflags", "+faststart", "-y", output);
 
-  const res = await runFfmpeg(ffmpegArgs);
+  const res = await runFfmpeg(ffmpegArgs, {
+    signal: options?.signal,
+    onProgress: options?.onProgress,
+    expectedDurationSeconds: duration,
+  });
 
   return {
     success: true,
@@ -97,7 +106,7 @@ export async function reformatAspectRatio(args: ReformatAspectArgs) {
     mode,
     resolution: `${tw}x${th}`,
     encoderUsed: videoEncoder,
-    hardwareAccelerated: videoEncoder.includes("videotoolbox"),
+    hardwareAccelerated: isHwUsed,
     commandExecuted: res.command,
     durationSeconds: res.durationSeconds,
   };

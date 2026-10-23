@@ -3,11 +3,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
-import { probeMedia } from "./tools/probe.js";
-import { convertMedia } from "./tools/convert.js";
-import { trimMedia } from "./tools/trim.js";
-import { extractAudio } from "./tools/audio.js";
-import { extractThumbnail } from "./tools/thumbnail.js";
+import { probeMedia, probeMediaSchema } from "./tools/probe.js";
+import { convertMedia, convertMediaSchema } from "./tools/convert.js";
+import { trimMedia, trimMediaSchema } from "./tools/trim.js";
+import { extractAudio, extractAudioSchema } from "./tools/audio.js";
+import { extractThumbnail, extractThumbnailSchema } from "./tools/thumbnail.js";
 import { compressMedia, compressMediaSchema } from "./tools/compress.js";
 import { concatMedia, concatMediaSchema } from "./tools/concat.js";
 import { generateWaveform, generateWaveformSchema } from "./tools/waveform.js";
@@ -16,22 +16,46 @@ import { changeSpeed, changeSpeedSchema } from "./tools/speed.js";
 import { reformatAspectRatio, reformatAspectSchema } from "./tools/reformat.js";
 import { trimSilence, trimSilenceSchema } from "./tools/silence.js";
 import { createSplitScreen, splitScreenSchema } from "./tools/split.js";
+import { burnSubtitles, burnSubtitlesSchema } from "./tools/burn_subtitles.js";
+import { extractKeyframes, extractKeyframesSchema } from "./tools/keyframes.js";
+import { normalizeAudio, normalizeAudioSchema } from "./tools/normalize.js";
+import { addOverlay, addOverlaySchema } from "./tools/overlay.js";
+import { detectHwAccel } from "./utils/hwaccel.js";
+import { FfmpegProgress, runCommand } from "./utils/exec.js";
 
 const server = new McpServer({
   name: "ffmpeg-mcp-server",
-  version: "0.4.0",
+  version: "0.5.0",
 });
+
+function createProgressCallback(extra: any) {
+  return (p: FfmpegProgress) => {
+    if (extra._meta?.progressToken !== undefined && typeof extra.sendNotification === "function") {
+      extra
+        .sendNotification({
+          method: "notifications/progress",
+          params: {
+            progressToken: extra._meta.progressToken,
+            progress: p.percent ?? (p.timeSeconds ? Math.round(p.timeSeconds) : 0),
+            total: 100,
+            message: p.percent
+              ? `Processing: ${p.percent}% (speed: ${p.speed || "N/A"})`
+              : `Processing media (${p.timeSeconds || 0}s rendered)...`,
+          },
+        })
+        .catch(() => {});
+    }
+  };
+}
 
 // Tool 1: Probe Media
 server.tool(
   "media_probe",
   "Inspect audio and video files with ffprobe. Returns container metadata, stream details, codecs, resolution, bitrate, and duration as JSON.",
-  {
-    inputPath: z.string().describe("Path to the media file to inspect (e.g. './video.mp4')"),
-  },
-  async ({ inputPath }) => {
+  probeMediaSchema.shape,
+  async ({ inputPath }, extra) => {
     try {
-      const result = await probeMedia(inputPath);
+      const result = await probeMedia(inputPath, { signal: extra.signal });
       return {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
       };
@@ -47,42 +71,17 @@ server.tool(
 // Tool 2: Convert Media
 server.tool(
   "media_convert",
-  "Convert video and audio files between formats. Includes presets for web MP4 (H.264/AAC), WebM (VP9/Opus), and animated GIF. Supports Apple Silicon hardware encoding.",
-  {
-    inputPath: z.string().describe("Path to the source media file to convert"),
-    outputPath: z.string().describe("Destination path for the converted file (e.g. ./output.mp4, ./output.webm, ./animation.gif)"),
-    preset: z
-      .enum(["web_mp4", "webm", "gif", "auto"])
-      .optional()
-      .describe("Encoding preset: 'web_mp4' for browser playback, 'webm' for WebM video, 'gif' for animated GIF, or 'auto'. Default: 'auto'."),
-    crf: z
-      .number()
-      .min(0)
-      .max(51)
-      .optional()
-      .describe("Quality factor from 0 to 51. Lower numbers mean higher quality. Default: 23 for MP4, 30 for WebM."),
-    resolution: z
-      .string()
-      .optional()
-      .describe("Target size formatted as 'WIDTHxHEIGHT', such as '1920x1080' or '1280x720'"),
-    fps: z
-      .number()
-      .positive()
-      .optional()
-      .describe("Target frame rate in frames per second, such as 30, 60, or 15"),
-    hardwareAcceleration: z
-      .boolean()
-      .optional()
-      .describe("Use Apple Silicon VideoToolbox encoding when available. Default: true."),
-  },
-  async (args) => {
+  "Convert video and audio files between formats. Includes presets for web MP4 (H.264/AAC), WebM (VP9/Opus), and animated GIF. Supports hardware acceleration on Apple Silicon, NVIDIA, Intel, and AMD.",
+  convertMediaSchema.shape,
+  async (args, extra) => {
     try {
-      const result = await convertMedia(args);
+      const onProgress = createProgressCallback(extra);
+      const result = await convertMedia(args, { signal: extra.signal, onProgress });
       return {
         content: [
           {
             type: "text",
-            text: `Successfully converted media:\nOutput: ${result.outputPath}\nHardware Accelerated: ${result.hardwareAccelerated}\nCommand: ${result.commandExecuted}`,
+            text: `Successfully converted media:\nOutput: ${result.outputPath}\nEncoder: ${result.encoderUsed} (Hardware Accelerated: ${result.hardwareAccelerated})\nCommand: ${result.commandExecuted}`,
           },
         ],
       };
@@ -99,20 +98,11 @@ server.tool(
 server.tool(
   "trim_media",
   "Cut a segment from a video or audio file. Uses stream copy without re-encoding by default, or re-encodes when accurate cuts are needed.",
-  {
-    inputPath: z.string().describe("Path to the source media file to cut."),
-    outputPath: z.string().describe("Destination path for the trimmed output file (e.g. './clip.mp4')."),
-    startTime: z.string().describe("Start timestamp formatted as 'HH:MM:SS' (e.g. '00:01:30') or seconds (e.g. '90')."),
-    endTime: z.string().optional().describe("Optional end timestamp formatted as 'HH:MM:SS' or seconds. Do not combine with duration."),
-    duration: z.string().optional().describe("Optional duration in seconds from startTime (e.g. '30'). If neither endTime nor duration is set, trims to end of file."),
-    accurateReencode: z
-      .boolean()
-      .optional()
-      .describe("Re-encode video for cuts between keyframes. Default: false (uses fast stream copy)."),
-  },
-  async (args) => {
+  trimMediaSchema.shape,
+  async (args, extra) => {
     try {
-      const result = await trimMedia(args);
+      const onProgress = createProgressCallback(extra);
+      const result = await trimMedia(args, { signal: extra.signal, onProgress });
       return {
         content: [
           {
@@ -134,23 +124,16 @@ server.tool(
 server.tool(
   "extract_audio",
   "Extract an audio track from a video file into a standalone audio file. Supports the 'whisper_wav' preset (16kHz mono WAV) for speech recognition models, plus MP3, AAC, FLAC, and stream copy.",
-  {
-    inputPath: z.string().describe("Path to the source video or audio file."),
-    outputPath: z.string().describe("Destination path for the output audio file (e.g. './extracted.wav' or './audio.mp3')."),
-    format: z
-      .enum(["whisper_wav", "mp3", "aac", "flac", "copy"])
-      .optional()
-      .describe("Audio format: 'whisper_wav' (16kHz mono WAV for Whisper), 'mp3', 'aac', 'flac', or 'copy' (extract without re-encoding)."),
-    bitrate: z.string().optional().describe("Target audio bitrate for MP3 or AAC (e.g. '128k', '192k', '320k')."),
-  },
-  async (args) => {
+  extractAudioSchema.shape,
+  async (args, extra) => {
     try {
-      const result = await extractAudio(args);
+      const onProgress = createProgressCallback(extra);
+      const result = await extractAudio(args, { signal: extra.signal, onProgress });
       return {
         content: [
           {
             type: "text",
-            text: `Successfully extracted audio:\nOutput: ${result.outputPath}\nCommand: ${result.commandExecuted}`,
+            text: `Successfully extracted audio:\nOutput: ${result.outputPath}\nFormat: ${result.format}\nCommand: ${result.commandExecuted}`,
           },
         ],
       };
@@ -166,20 +149,11 @@ server.tool(
 // Tool 5: Extract Thumbnail
 server.tool(
   "extract_thumbnail",
-  "Capture a still image from a video. Returns the saved image path and inlined base64 image data so vision models can inspect the frame.",
-  {
-    inputPath: z.string().describe("Path to the source video file."),
-    outputPath: z.string().describe("Destination image path ending in .png or .jpg (e.g. './thumb.png')."),
-    timestamp: z
-      .string()
-      .optional()
-      .describe("Timestamp to capture, such as '00:00:05', '10', or 'midpoint' for the middle frame. Default: '00:00:01'."),
-    resolution: z.string().optional().describe("Optional scaled size formatted as 'WIDTHxHEIGHT', such as '1280x720'. Defaults to source resolution."),
-    includeBase64: z.boolean().optional().describe("Return base64 image data in response for vision models. Default: true."),
-  },
-  async (args) => {
+  "Capture a single still image from a video. Returns the saved image path and inlined base64 image data so vision models can inspect the frame.",
+  extractThumbnailSchema.shape,
+  async (args, extra) => {
     try {
-      const result = await extractThumbnail(args);
+      const result = await extractThumbnail(args, { signal: extra.signal });
       const content: any[] = [];
       if (result.base64 && result.mimeType) {
         content.push({
@@ -207,9 +181,10 @@ server.tool(
   "compress_video",
   "Compress video files to fit upload limits (such as GitHub PRs under 10MB or Discord under 25MB) using target file sizes or CRF quality levels. Does not modify the original file.",
   compressMediaSchema.shape,
-  async (args) => {
+  async (args, extra) => {
     try {
-      const result = await compressMedia(args);
+      const onProgress = createProgressCallback(extra);
+      const result = await compressMedia(args, { signal: extra.signal, onProgress });
       return {
         content: [
           {
@@ -232,9 +207,10 @@ server.tool(
   "concat_media",
   "Join multiple video or audio files in order into a single file. Uses stream copy for matching files or re-encodes when formats differ.",
   concatMediaSchema.shape,
-  async (args) => {
+  async (args, extra) => {
     try {
-      const result = await concatMedia(args);
+      const onProgress = createProgressCallback(extra);
+      const result = await concatMedia(args, { signal: extra.signal, onProgress });
       return {
         content: [
           {
@@ -257,9 +233,9 @@ server.tool(
   "generate_waveform",
   "Generate a PNG waveform image from an audio or video file. Returns the file path and inlined base64 image data.",
   generateWaveformSchema.shape,
-  async (args) => {
+  async (args, extra) => {
     try {
-      const result = await generateWaveform(args);
+      const result = await generateWaveform(args, { signal: extra.signal });
       const content: any[] = [];
       if (result.base64) {
         content.push({
@@ -282,14 +258,15 @@ server.tool(
   }
 );
 
-// Tool 9: Add Subtitles
+// Tool 9: Add Subtitles (Soft Embedded)
 server.tool(
   "add_subtitles",
-  "Embed an SRT or VTT subtitle track into a video file without re-encoding the video stream.",
+  "Embed an SRT or VTT subtitle track into a video container (mov_text for MP4, srt for MKV) without re-encoding the video stream.",
   addSubtitlesSchema.shape,
-  async (args) => {
+  async (args, extra) => {
     try {
-      const result = await addSubtitles(args);
+      const onProgress = createProgressCallback(extra);
+      const result = await addSubtitles(args, { signal: extra.signal, onProgress });
       return {
         content: [
           {
@@ -312,9 +289,10 @@ server.tool(
   "change_speed",
   "Change video and audio playback speed (such as 2x for fast forward or 0.5x for slow motion) with pitch correction.",
   changeSpeedSchema.shape,
-  async (args) => {
+  async (args, extra) => {
     try {
-      const result = await changeSpeed(args);
+      const onProgress = createProgressCallback(extra);
+      const result = await changeSpeed(args, { signal: extra.signal, onProgress });
       return {
         content: [
           {
@@ -337,9 +315,10 @@ server.tool(
   "reformat_aspect_ratio",
   "Change video aspect ratio to 9:16 vertical, 1:1 square, or 4:5 portrait. Adds blurred video borders, solid padding, or center crops.",
   reformatAspectSchema.shape,
-  async (args) => {
+  async (args, extra) => {
     try {
-      const result = await reformatAspectRatio(args);
+      const onProgress = createProgressCallback(extra);
+      const result = await reformatAspectRatio(args, { signal: extra.signal, onProgress });
       return {
         content: [
           {
@@ -360,11 +339,12 @@ server.tool(
 // Tool 12: Trim Silence
 server.tool(
   "trim_silence",
-  "Detect and remove silent pauses from audio or video files. Returns the duration and seconds saved.",
+  "Detect and remove silent pauses from audio or video files. Preserves video & audio lip-sync in 'start_end' mode. Returns original duration and seconds saved.",
   trimSilenceSchema.shape,
-  async (args) => {
+  async (args, extra) => {
     try {
-      const result = await trimSilence(args);
+      const onProgress = createProgressCallback(extra);
+      const result = await trimSilence(args, { signal: extra.signal, onProgress });
       return {
         content: [
           {
@@ -387,9 +367,10 @@ server.tool(
   "create_split_screen",
   "Combine two video files into a split-screen video. Stacks clips vertically (1080x1920 for Reels and TikTok) or places them side-by-side. Supports audio mixing and subtitle embedding.",
   splitScreenSchema.shape,
-  async (args) => {
+  async (args, extra) => {
     try {
-      const result = await createSplitScreen(args);
+      const onProgress = createProgressCallback(extra);
+      const result = await createSplitScreen(args, { signal: extra.signal, onProgress });
       return {
         content: [
           {
@@ -407,10 +388,266 @@ server.tool(
   }
 );
 
+// Tool 14: Burn Subtitles (Hardcoded)
+server.tool(
+  "burn_subtitles",
+  "Hardcode/burn subtitles directly into video frames with customizable font size, colors, and positioning. Unlike soft subtitles, burned subtitles render on all platforms including TikTok, Instagram Reels, and YouTube Shorts.",
+  burnSubtitlesSchema.shape,
+  async (args, extra) => {
+    try {
+      const onProgress = createProgressCallback(extra);
+      const result = await burnSubtitles(args, { signal: extra.signal, onProgress });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Successfully burned subtitles into video:\nOutput: ${result.outputPath}\nSubtitles: ${result.subtitlesBurned}\nFont Size: ${result.fontSize}pt (${result.fontColor})\nEncoder: ${result.encoderUsed} (Hardware Accelerated: ${result.hardwareAccelerated})\nCommand: ${result.commandExecuted}`,
+          },
+        ],
+      };
+    } catch (err: any) {
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Error burning subtitles: ${err.message}` }],
+      };
+    }
+  }
+);
+
+// Tool 15: Extract Keyframes (Multi-Frame / Contact Sheet)
+server.tool(
+  "extract_keyframes",
+  "Extract multiple representative frames across a video's timeline. In 'montage' mode, merges frames into a single contact-sheet grid image and inlines base64 for vision models to inspect the whole video at once.",
+  extractKeyframesSchema.shape,
+  async (args, extra) => {
+    try {
+      const result = await extractKeyframes(args, { signal: extra.signal });
+      const content: any[] = [];
+      if (result.base64 && result.mimeType) {
+        content.push({
+          type: "image",
+          data: result.base64,
+          mimeType: result.mimeType,
+        });
+      }
+      content.push({
+        type: "text",
+        text: `Successfully extracted ${result.frameCount} keyframes:\nOutput: ${result.outputPath}\nLayout: ${result.layout}${result.gridDimensions ? ` (${result.gridDimensions} grid)` : ""}\nCommand: ${result.commandExecuted}`,
+      });
+      return { content };
+    } catch (err: any) {
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Error extracting keyframes: ${err.message}` }],
+      };
+    }
+  }
+);
+
+// Tool 16: Normalize Audio (Loudnorm / EBU R128)
+server.tool(
+  "normalize_audio",
+  "Normalize audio loudness using the broadcast standard EBU R128 (loudnorm). Supports -16 LUFS (podcasts/Reels), -14 LUFS (YouTube), and optional voice clarity enhancement (80Hz high-pass to remove mic rumble). Works on audio or video files.",
+  normalizeAudioSchema.shape,
+  async (args, extra) => {
+    try {
+      const onProgress = createProgressCallback(extra);
+      const result = await normalizeAudio(args, { signal: extra.signal, onProgress });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Successfully normalized audio loudness:\nOutput: ${result.outputPath}\nTarget LUFS: ${result.targetLufs} LUFS (Peak: ${result.targetPeakDb} dBTP)\nVoice Clarity: ${result.voiceClarityEnabled ? "Enabled" : "Disabled"}\nMedia Type: ${result.isVideo ? "Video (lossless video stream copy)" : "Audio"}\nCommand: ${result.commandExecuted}`,
+          },
+        ],
+      };
+    } catch (err: any) {
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Error normalizing audio: ${err.message}` }],
+      };
+    }
+  }
+);
+
+// Tool 17: Add Overlay (Watermark / Branding)
+server.tool(
+  "add_overlay",
+  "Place a watermark image, logo PNG, or branding graphic over a video with customizable position, padding, scaling, and opacity.",
+  addOverlaySchema.shape,
+  async (args, extra) => {
+    try {
+      const onProgress = createProgressCallback(extra);
+      const result = await addOverlay(args, { signal: extra.signal, onProgress });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Successfully added overlay:\nOutput: ${result.outputPath}\nPosition: ${result.position} (padding: ${result.padding}px)\nOpacity: ${result.opacity}\nEncoder: ${result.encoderUsed} (Hardware Accelerated: ${result.hardwareAccelerated})\nCommand: ${result.commandExecuted}`,
+          },
+        ],
+      };
+    } catch (err: any) {
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Error adding overlay: ${err.message}` }],
+      };
+    }
+  }
+);
+
+// Resource 1: Capabilities & Hardware Info
+server.registerResource(
+  "system_capabilities",
+  "media://capabilities",
+  {
+    title: "FFmpeg System Capabilities",
+    description: "Detected FFmpeg version, hardware acceleration devices, and available video encoders.",
+    mimeType: "application/json",
+  },
+  async () => {
+    const hwInfo = await detectHwAccel();
+    let versionStr = "unknown";
+    try {
+      const res = await runCommand("ffmpeg", ["-version"]);
+      const firstLine = res.stdout.split("\n")[0] || "";
+      versionStr = firstLine.replace(/^ffmpeg version\s*/, "").split(" ")[0];
+    } catch {}
+
+    const data = {
+      ffmpegVersion: versionStr,
+      hardwareAcceleration: {
+        isAvailable: hwInfo.isAvailable,
+        primaryType: hwInfo.hardwareType,
+        supportedTypes: hwInfo.availableTypes,
+        h264Encoder: hwInfo.h264Encoder,
+        hevcEncoder: hwInfo.hevcEncoder,
+      },
+      availableEncoders: hwInfo.encoders,
+      totalToolsActive: 17,
+    };
+
+    return {
+      contents: [
+        {
+          uri: "media://capabilities",
+          mimeType: "application/json",
+          text: JSON.stringify(data, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+// Resource 2: Social Presets & Standards
+server.registerResource(
+  "social_presets",
+  "media://presets",
+  {
+    title: "Media Presets and Guidelines",
+    description: "Aspect ratio standards, loudness limits, and upload specifications for social media platforms.",
+    mimeType: "application/json",
+  },
+  async () => {
+    const presets = {
+      aspectRatios: {
+        vertical_9_16: { resolution: "1080x1920", platforms: ["TikTok", "Instagram Reels", "YouTube Shorts"] },
+        horizontal_16_9: { resolution: "1920x1080", platforms: ["YouTube", "Twitter/X", "Vimeo"] },
+        square_1_1: { resolution: "1080x1080", platforms: ["Instagram Post", "LinkedIn"] },
+        portrait_4_5: { resolution: "1080x1350", platforms: ["Instagram Feed"] },
+      },
+      targetSizes: {
+        github_pr: { maxMB: 10, recommendedPreset: "github_pr" },
+        discord_free: { maxMB: 25, recommendedPreset: "discord" },
+        email_attachment: { maxMB: 15, recommendedPreset: "email" },
+      },
+      audioStandards: {
+        podcast_and_shorts: { lufs: -16, peakDb: -1.5 },
+        youtube: { lufs: -14, peakDb: -1.0 },
+        broadcast_ebu_r128: { lufs: -23, peakDb: -1.0 },
+        speech_recognition: { sampleRate: 16000, channels: 1, codec: "pcm_s16le" },
+      },
+    };
+
+    return {
+      contents: [
+        {
+          uri: "media://presets",
+          mimeType: "application/json",
+          text: JSON.stringify(presets, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+// Prompt 1: Social Media Clip Generator
+server.registerPrompt(
+  "social_clip_generator",
+  {
+    title: "Generate Viral Social Media Clip",
+    description: "Step-by-step workflow for turning landscape footage into a 9:16 vertical short with burned subtitles.",
+    argsSchema: {
+      inputPath: z.string().describe("Path to the source landscape video"),
+      subtitlesPath: z.string().optional().describe("Optional path to subtitles file (.srt)"),
+    },
+  },
+  async ({ inputPath, subtitlesPath }) => {
+    return {
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Please convert this video into a 9:16 vertical reel suitable for TikTok, Instagram Reels, and YouTube Shorts:
+Source Video: ${inputPath}
+${subtitlesPath ? `Subtitles: ${subtitlesPath}` : "No separate subtitles provided."}
+
+Recommended workflow:
+1. Use 'media_probe' to check duration and resolution.
+2. Use 'reformat_aspect_ratio' with targetRatio: '9:16' and mode: 'blur_background'.
+3. Use 'trim_silence' with mode: 'start_end' to eliminate dead air at the beginning and end.
+4. If subtitles are available, use 'burn_subtitles' to hardcode visible captions for mobile viewers.
+5. Use 'normalize_audio' with targetLufs: -16 to ensure consistent loudness.`,
+          },
+        },
+      ],
+    };
+  }
+);
+
+// Prompt 2: Whisper Transcription Prep
+server.registerPrompt(
+  "whisper_audio_prep",
+  {
+    title: "Prepare Media for Whisper Speech Recognition",
+    description: "Extract and normalize 16kHz mono audio optimized for Whisper and local STT models.",
+    argsSchema: {
+      inputPath: z.string().describe("Path to video or audio file"),
+    },
+  },
+  async ({ inputPath }) => {
+    return {
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Extract the audio from '${inputPath}' for speech-to-text processing:
+1. Use 'extract_audio' with format: 'whisper_wav' (16kHz mono PCM WAV).
+2. If the audio is quiet, use 'normalize_audio' with voiceClarity: true.
+3. Pass the resulting WAV to your speech recognition tool.`,
+          },
+        },
+      ],
+    };
+  }
+);
+
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("FFmpeg MCP Server running on stdio (13 tools active)");
+  console.error("FFmpeg MCP Server running on stdio (17 tools, 2 resources, 2 prompts active)");
 }
 
 main().catch((err) => {

@@ -1,87 +1,121 @@
-import { ensureFileExists, ensureOutputDir, runCommand } from "../utils/exec.js";
+import { z } from "zod";
+import { ensureFileExists, ensureOutputDir, runFfmpeg, FfmpegProgress } from "../utils/exec.js";
 import { detectHwAccel } from "../utils/hwaccel.js";
+import { probeMedia } from "./probe.js";
 
-export interface ConvertOptions {
-  inputPath: string;
-  outputPath: string;
-  preset?: "web_mp4" | "webm" | "gif" | "auto";
-  crf?: number; // Quality: 18-28 (lower is higher quality, default 23)
-  resolution?: string; // e.g. "1920x1080", "1280x720"
-  fps?: number;
-  hardwareAcceleration?: boolean;
-}
+export const convertMediaSchema = z.object({
+  inputPath: z.string().describe("Path to the source media file to convert"),
+  outputPath: z.string().describe("Destination path for the converted file (e.g. ./output.mp4, ./output.webm, ./animation.gif)"),
+  preset: z
+    .enum(["web_mp4", "webm", "gif", "auto"])
+    .optional()
+    .describe("Encoding preset: 'web_mp4' for browser playback, 'webm' for WebM video, 'gif' for animated GIF, or 'auto'. Default: 'auto'."),
+  crf: z
+    .number()
+    .min(0)
+    .max(51)
+    .optional()
+    .describe("Quality factor from 0 to 51. Lower numbers mean higher quality. Default: 23 for MP4, 30 for WebM."),
+  resolution: z
+    .string()
+    .optional()
+    .describe("Target size formatted as 'WIDTHxHEIGHT', such as '1920x1080' or '1280x720'"),
+  fps: z
+    .number()
+    .positive()
+    .optional()
+    .describe("Target frame rate in frames per second, such as 30, 60, or 15"),
+  hardwareAcceleration: z
+    .boolean()
+    .optional()
+    .describe("Use hardware-accelerated video encoding (VideoToolbox, NVENC, QSV, etc.) when available. Default: true."),
+});
 
-export async function convertMedia(options: ConvertOptions): Promise<{
+export type ConvertMediaParams = z.infer<typeof convertMediaSchema>;
+
+export async function convertMedia(
+  params: ConvertMediaParams,
+  options?: { signal?: AbortSignal; onProgress?: (p: FfmpegProgress) => void }
+): Promise<{
   outputPath: string;
   commandExecuted: string;
   hardwareAccelerated: boolean;
+  encoderUsed: string;
+  durationSeconds: number;
 }> {
-  const input = await ensureFileExists(options.inputPath);
-  const output = await ensureOutputDir(options.outputPath);
+  const input = await ensureFileExists(params.inputPath);
+  const output = await ensureOutputDir(params.outputPath);
+
+  let inputDuration: number | undefined;
+  try {
+    const probe = await probeMedia(input, { signal: options?.signal });
+    inputDuration = probe.format.durationSeconds;
+  } catch {}
 
   const hwInfo = await detectHwAccel();
-  const useHw = options.hardwareAcceleration ?? hwInfo.isAvailable;
+  const useHw = params.hardwareAcceleration ?? hwInfo.isAvailable;
 
-  const preset = options.preset || "auto";
-  const args: string[] = ["-y", "-i", input];
+  const preset = params.preset || "auto";
+  const args: string[] = ["-i", input];
   let isHwUsed = false;
+  let encoderUsed = "auto";
 
   if (preset === "gif") {
-    const scale = options.resolution
-      ? `scale=${options.resolution.replace("x", ":")}:flags=lanczos`
+    encoderUsed = "gif (palettegen/paletteuse)";
+    const scale = params.resolution
+      ? `scale=${params.resolution.replace("x", ":")}:flags=lanczos`
       : "scale=iw:ih:flags=lanczos";
-    const fps = options.fps ? `fps=${options.fps},` : "fps=15,";
+    const fps = params.fps ? `fps=${params.fps},` : "fps=15,";
     const filter = `${fps}${scale},split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse`;
 
-    args.push("-vf", filter, output);
-  } else if (preset === "web_mp4" || (preset === "auto" && output.endsWith(".mp4"))) {
+    args.push("-vf", filter);
+  } else if (preset === "web_mp4" || (preset === "auto" && output.toLowerCase().endsWith(".mp4"))) {
     if (useHw && hwInfo.isAvailable) {
-      args.push("-c:v", hwInfo.h264Encoder);
-      args.push("-b:v", "4M");
+      encoderUsed = hwInfo.h264Encoder;
+      args.push("-c:v", hwInfo.h264Encoder, "-b:v", "4M");
       isHwUsed = true;
     } else {
-      args.push("-c:v", "libx264");
-      args.push("-crf", String(options.crf ?? 23));
-      args.push("-preset", "medium");
+      encoderUsed = "libx264";
+      args.push("-c:v", "libx264", "-crf", String(params.crf ?? 23), "-preset", "medium");
     }
-    args.push("-pix_fmt", "yuv420p");
-    args.push("-c:a", "aac");
-    args.push("-b:a", "192k");
-    args.push("-movflags", "+faststart");
+    args.push("-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart");
 
-    if (options.resolution) {
-      args.push("-vf", `scale=${options.resolution.replace("x", ":")}`);
+    if (params.resolution) {
+      args.push("-vf", `scale=${params.resolution.replace("x", ":")}`);
     }
-    if (options.fps) {
-      args.push("-r", String(options.fps));
+    if (params.fps) {
+      args.push("-r", String(params.fps));
     }
-    args.push(output);
-  } else if (preset === "webm" || (preset === "auto" && output.endsWith(".webm"))) {
-    args.push("-c:v", "libvpx-vp9");
-    args.push("-crf", String(options.crf ?? 30));
-    args.push("-b:v", "0");
-    args.push("-c:a", "libopus");
-    args.push("-b:a", "128k");
+  } else if (preset === "webm" || (preset === "auto" && output.toLowerCase().endsWith(".webm"))) {
+    encoderUsed = "libvpx-vp9";
+    args.push("-c:v", "libvpx-vp9", "-crf", String(params.crf ?? 30), "-b:v", "0", "-c:a", "libopus", "-b:a", "128k");
 
-    if (options.resolution) {
-      args.push("-vf", `scale=${options.resolution.replace("x", ":")}`);
+    if (params.resolution) {
+      args.push("-vf", `scale=${params.resolution.replace("x", ":")}`);
     }
-    args.push(output);
   } else {
-    if (options.crf) {
-      args.push("-crf", String(options.crf));
+    encoderUsed = "copy/default";
+    if (params.crf) {
+      args.push("-crf", String(params.crf));
     }
-    if (options.resolution) {
-      args.push("-vf", `scale=${options.resolution.replace("x", ":")}`);
+    if (params.resolution) {
+      args.push("-vf", `scale=${params.resolution.replace("x", ":")}`);
     }
-    args.push(output);
   }
 
-  await runCommand("ffmpeg", args);
+  args.push("-y", output);
+
+  const res = await runFfmpeg(args, {
+    signal: options?.signal,
+    onProgress: options?.onProgress,
+    expectedDurationSeconds: inputDuration,
+  });
 
   return {
     outputPath: output,
-    commandExecuted: `ffmpeg ${args.join(" ")}`,
+    commandExecuted: res.command,
     hardwareAccelerated: isHwUsed,
+    encoderUsed,
+    durationSeconds: res.durationSeconds,
   };
 }

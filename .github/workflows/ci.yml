@@ -19,16 +19,13 @@ jobs:
           node-version: 20
           cache: "npm"
 
-      - name: Install FFmpeg
+      - name: Install FFmpeg & Libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg libass-dev
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build TypeScript
-        run: npm run build
-
-      - name: Run automated tests
-        run: node test-tools.js
+      - name: Run build and tests
+        run: npm test
