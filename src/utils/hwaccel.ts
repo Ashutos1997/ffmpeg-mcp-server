@@ -17,6 +17,22 @@ export interface HwAccelInfo {
 
 let cachedInfo: HwAccelInfo | null = null;
 
+async function canEncodeWith(encoder: string): Promise<boolean> {
+  try {
+    await runCommand("ffmpeg", [
+      "-v", "quiet",
+      "-f", "lavfi",
+      "-i", "color=c=black:s=16x16:d=0.04",
+      "-c:v", encoder,
+      "-f", "null",
+      "-"
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Detects available hardware-accelerated video encoders across macOS, Linux, and Windows.
  * Supports Apple Silicon (VideoToolbox), NVIDIA (NVENC), Intel (QuickSync), AMD (AMF), and Linux (VAAPI).
@@ -90,30 +106,52 @@ export async function detectHwAccel(): Promise<HwAccelInfo> {
   let h264Encoder = "libx264";
   let hevcEncoder = "libx265";
 
+  const candidates: Array<{ type: HardwareType; h264: string; hevc: string }> = [];
+
   if (isDarwin && detectedTypes.includes("videotoolbox")) {
-    chosenType = "videotoolbox";
-    h264Encoder = "h264_videotoolbox";
-    hevcEncoder = detectedHevc.includes("hevc_videotoolbox") ? "hevc_videotoolbox" : "libx265";
-  } else if (detectedTypes.includes("nvenc")) {
-    chosenType = "nvenc";
-    h264Encoder = "h264_nvenc";
-    hevcEncoder = detectedHevc.includes("hevc_nvenc") ? "hevc_nvenc" : "libx265";
-  } else if (detectedTypes.includes("qsv")) {
-    chosenType = "qsv";
-    h264Encoder = "h264_qsv";
-    hevcEncoder = detectedHevc.includes("hevc_qsv") ? "hevc_qsv" : "libx265";
-  } else if (detectedTypes.includes("amf")) {
-    chosenType = "amf";
-    h264Encoder = "h264_amf";
-    hevcEncoder = detectedHevc.includes("hevc_amf") ? "hevc_amf" : "libx265";
-  } else if (detectedTypes.includes("vaapi")) {
-    chosenType = "vaapi";
-    h264Encoder = "h264_vaapi";
-    hevcEncoder = detectedHevc.includes("hevc_vaapi") ? "hevc_vaapi" : "libx265";
-  } else if (detectedTypes.length > 0) {
-    chosenType = detectedTypes[0];
-    h264Encoder = detectedH264[0] || "libx264";
-    hevcEncoder = detectedHevc[0] || "libx265";
+    candidates.push({
+      type: "videotoolbox",
+      h264: "h264_videotoolbox",
+      hevc: detectedHevc.includes("hevc_videotoolbox") ? "hevc_videotoolbox" : "libx265",
+    });
+  }
+  if (detectedTypes.includes("nvenc")) {
+    candidates.push({
+      type: "nvenc",
+      h264: "h264_nvenc",
+      hevc: detectedHevc.includes("hevc_nvenc") ? "hevc_nvenc" : "libx265",
+    });
+  }
+  if (detectedTypes.includes("qsv")) {
+    candidates.push({
+      type: "qsv",
+      h264: "h264_qsv",
+      hevc: detectedHevc.includes("hevc_qsv") ? "hevc_qsv" : "libx265",
+    });
+  }
+  if (detectedTypes.includes("amf")) {
+    candidates.push({
+      type: "amf",
+      h264: "h264_amf",
+      hevc: detectedHevc.includes("hevc_amf") ? "hevc_amf" : "libx265",
+    });
+  }
+  if (detectedTypes.includes("vaapi")) {
+    candidates.push({
+      type: "vaapi",
+      h264: "h264_vaapi",
+      hevc: detectedHevc.includes("hevc_vaapi") ? "hevc_vaapi" : "libx265",
+    });
+  }
+
+  // Verify that the driver/device actually initializes (e.g. NVENC compiled in ffmpeg on runner without GPU)
+  for (const candidate of candidates) {
+    if (await canEncodeWith(candidate.h264)) {
+      chosenType = candidate.type;
+      h264Encoder = candidate.h264;
+      hevcEncoder = candidate.hevc;
+      break;
+    }
   }
 
   cachedInfo = {
