@@ -1,5 +1,7 @@
 # ffmpeg-mcp-server
 
+[English](README.md) | [한국어](README.ko.md)
+
 [![CI](https://github.com/Ashutos1997/ffmpeg-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/Ashutos1997/ffmpeg-mcp-server/actions) [![Release](https://img.shields.io/github/v/release/Ashutos1997/ffmpeg-mcp-server?color=blue)](https://github.com/Ashutos1997/ffmpeg-mcp-server/releases) [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE) [![npm version](https://img.shields.io/npm/v/@ash_j1997/ffmpeg-mcp-server.svg)](https://www.npmjs.com/package/@ash_j1997/ffmpeg-mcp-server) [![npm downloads](https://img.shields.io/npm/dw/@ash_j1997/ffmpeg-mcp-server.svg)](https://www.npmjs.com/package/@ash_j1997/ffmpeg-mcp-server) [![npm total downloads](https://img.shields.io/npm/dt/@ash_j1997/ffmpeg-mcp-server.svg)](https://www.npmjs.com/package/@ash_j1997/ffmpeg-mcp-server) [![Glama](https://glama.ai/mcp/servers/@Ashutos1997/ffmpeg-mcp-server/badge)](https://glama.ai/mcp/servers/@Ashutos1997/ffmpeg-mcp-server)
 
 A Model Context Protocol (MCP) server that gives AI tools access to FFmpeg and FFprobe to process video and audio locally.
