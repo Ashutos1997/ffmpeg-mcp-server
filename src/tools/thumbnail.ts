@@ -8,9 +8,14 @@ export const extractThumbnailSchema = z.object({
   outputPath: z.string().describe("Destination image path ending in .png or .jpg (e.g. './thumb.png')."),
   timestamp: z
     .string()
+    .regex(/^((\d{1,2}:)?\d{1,2}:\d{1,2}(\.\d+)?|\d+(\.\d+)?|midpoint)$/i, "Timestamp must be 'HH:MM:SS', seconds (e.g. '10'), or 'midpoint'")
     .optional()
     .describe("Timestamp to capture, such as '00:00:05', '10', or 'midpoint' for the middle frame. Default: '00:00:01'."),
-  resolution: z.string().optional().describe("Optional scaled size formatted as 'WIDTHxHEIGHT', such as '1280x720'. Defaults to source resolution."),
+  resolution: z
+    .string()
+    .regex(/^\d{2,5}x\d{2,5}$/, "Resolution must be formatted as 'WIDTHxHEIGHT' (e.g. '1280x720')")
+    .optional()
+    .describe("Optional scaled size formatted as 'WIDTHxHEIGHT', such as '1280x720'. Defaults to source resolution."),
   includeBase64: z.boolean().optional().describe("Return base64 image data in response for vision models. Default: true."),
 });
 

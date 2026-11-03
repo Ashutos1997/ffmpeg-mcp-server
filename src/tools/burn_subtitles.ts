@@ -10,11 +10,13 @@ export const burnSubtitlesSchema = z.object({
   fontSize: z.number().int().min(8).max(120).optional().default(24).describe("Subtitle font size in points. Default: 24."),
   fontColor: z
     .string()
+    .regex(/^(white|yellow|cyan|red|green|blue|black|&[hH][0-9a-fA-F]{6,8})$/i, "Color must be a recognized color name or ASS hex code (e.g. '&H00FFFFFF')")
     .optional()
     .default("white")
     .describe("Primary subtitle text color: 'white', 'yellow', 'cyan', or ASS hex e.g. '&H00FFFFFF'. Default: 'white'."),
   outlineColor: z
     .string()
+    .regex(/^(white|yellow|cyan|red|green|blue|black|&[hH][0-9a-fA-F]{6,8})$/i, "Outline color must be a recognized color name or ASS hex code (e.g. '&H00000000')")
     .optional()
     .default("black")
     .describe("Subtitle border/outline color: 'black', 'white', or ASS hex. Default: 'black'."),
@@ -30,8 +32,8 @@ export const burnSubtitlesSchema = z.object({
 export type BurnSubtitlesParams = z.infer<typeof burnSubtitlesSchema>;
 
 function toAssColor(color: string): string {
-  const c = color.toLowerCase().trim();
-  if (c.startsWith("&h")) return color;
+  const c = color.trim();
+  if (/^&[hH][0-9a-fA-F]{6,8}$/.test(c)) return color;
   const map: Record<string, string> = {
     white: "&H00FFFFFF",
     black: "&H00000000",
@@ -41,7 +43,7 @@ function toAssColor(color: string): string {
     green: "&H0000FF00",
     blue: "&H00FF0000",
   };
-  return map[c] || "&H00FFFFFF";
+  return map[c.toLowerCase()] || "&H00FFFFFF";
 }
 
 export async function burnSubtitles(

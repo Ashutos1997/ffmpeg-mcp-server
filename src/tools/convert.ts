@@ -18,6 +18,7 @@ export const convertMediaSchema = z.object({
     .describe("Quality factor from 0 to 51. Lower numbers mean higher quality. Default: 23 for MP4, 30 for WebM."),
   resolution: z
     .string()
+    .regex(/^\d{2,5}x\d{2,5}$/, "Resolution must be formatted as 'WIDTHxHEIGHT' (e.g. '1920x1080')")
     .optional()
     .describe("Target size formatted as 'WIDTHxHEIGHT', such as '1920x1080' or '1280x720'"),
   fps: z

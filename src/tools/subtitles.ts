@@ -5,8 +5,18 @@ export const addSubtitlesSchema = z.object({
   videoPath: z.string().describe("Path to the source video file"),
   subtitlesPath: z.string().describe("Path to subtitle file (.srt or .vtt)"),
   outputPath: z.string().describe("Target output video path (.mp4, .mkv, or .mov)"),
-  language: z.string().optional().default("eng").describe("ISO 639-2 three-letter language code (e.g. 'eng', 'spa', 'fra', 'deu')"),
-  title: z.string().optional().default("English").describe("Subtitle track label displayed in video players"),
+  language: z
+    .string()
+    .regex(/^[a-zA-Z]{2,4}$/, "Must be an ISO 2-4 letter language code (e.g. 'eng')")
+    .optional()
+    .default("eng")
+    .describe("ISO 639-2 three-letter language code (e.g. 'eng', 'spa', 'fra', 'deu')"),
+  title: z
+    .string()
+    .max(100)
+    .optional()
+    .default("English")
+    .describe("Subtitle track label displayed in video players"),
 });
 
 export type AddSubtitlesParams = z.infer<typeof addSubtitlesSchema>;

@@ -16,6 +16,7 @@ export const reformatAspectSchema = z.object({
     .describe("Format mode: 'blur_background' adds blurred video borders, 'fit_pad' adds solid color padding, and 'crop_center' zooms and crops the center. Default: 'blur_background'."),
   padColor: z
     .string()
+    .regex(/^(0x[0-9a-fA-F]{6}|#[0-9a-fA-F]{6}|[a-zA-Z]{3,20})$/, "padColor must be hex (e.g. '0x1e1e2e') or color name (e.g. 'black', 'white')")
     .default("black")
     .describe("Background color for fit_pad mode, such as 'black', 'white', or hex '0x1e1e2e'. Default: 'black'."),
   blurAmount: z

@@ -5,9 +5,20 @@ import { detectHwAccel } from "../utils/hwaccel.js";
 export const trimMediaSchema = z.object({
   inputPath: z.string().describe("Path to the source media file to cut."),
   outputPath: z.string().describe("Destination path for the trimmed output file (e.g. './clip.mp4')."),
-  startTime: z.string().describe("Start timestamp formatted as 'HH:MM:SS' (e.g. '00:01:30') or seconds (e.g. '90')."),
-  endTime: z.string().optional().describe("Optional end timestamp formatted as 'HH:MM:SS' or seconds. Do not combine with duration."),
-  duration: z.string().optional().describe("Optional duration in seconds from startTime (e.g. '30'). If neither endTime nor duration is set, trims to end of file."),
+  startTime: z
+    .string()
+    .regex(/^((\d{1,2}:)?\d{1,2}:\d{1,2}(\.\d+)?|\d+(\.\d+)?)$/, "startTime must be 'HH:MM:SS' (e.g. '00:01:30') or seconds (e.g. '90')")
+    .describe("Start timestamp formatted as 'HH:MM:SS' (e.g. '00:01:30') or seconds (e.g. '90')."),
+  endTime: z
+    .string()
+    .regex(/^((\d{1,2}:)?\d{1,2}:\d{1,2}(\.\d+)?|\d+(\.\d+)?)$/, "endTime must be 'HH:MM:SS' or seconds")
+    .optional()
+    .describe("Optional end timestamp formatted as 'HH:MM:SS' or seconds. Do not combine with duration."),
+  duration: z
+    .string()
+    .regex(/^(\d+(\.\d+)?)$/, "duration must be a positive number of seconds (e.g. '30')")
+    .optional()
+    .describe("Optional duration in seconds from startTime (e.g. '30'). If neither endTime nor duration is set, trims to end of file."),
   accurateReencode: z
     .boolean()
     .optional()

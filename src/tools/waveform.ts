@@ -7,7 +7,12 @@ export const generateWaveformSchema = z.object({
   outputPath: z.string().describe("Destination path for the PNG image."),
   width: z.number().int().positive().optional().default(1200).describe("Image width in pixels. Default: 1200."),
   height: z.number().int().positive().optional().default(280).describe("Image height in pixels. Default: 280."),
-  color: z.string().optional().default("0x6366f1").describe("Waveform color in hex or name (such as '0x6366f1', 'white', or 'black'). Default: '0x6366f1'."),
+  color: z
+    .string()
+    .regex(/^(0x[0-9a-fA-F]{6}|#[0-9a-fA-F]{6}|[a-zA-Z]{3,20})$/, "Color must be hex (e.g. '0x6366f1', '#6366f1') or color name (e.g. 'white', 'black')")
+    .optional()
+    .default("0x6366f1")
+    .describe("Waveform color in hex or name (such as '0x6366f1', 'white', or 'black'). Default: '0x6366f1'."),
   scale: z.enum(["lin", "log", "sqrt"]).optional().default("lin").describe("Amplitude scale: 'lin', 'log', or 'sqrt'. Default: 'lin'."),
   includeBase64: z.boolean().optional().default(true).describe("Return base64 image data in the response for vision models. Default: true."),
 });
