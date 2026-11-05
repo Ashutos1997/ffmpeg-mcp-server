@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { z } from "zod";
 import { runFfmpeg, ensureFileExists, ensureOutputDir, FfmpegProgress } from "../utils/exec.js";
 import { detectHwAccel } from "../utils/hwaccel.js";
@@ -51,29 +53,93 @@ export async function compressMedia(
   let isHwUsed = false;
 
   if (targetSizeMB) {
-    const totalBits = targetSizeMB * 8 * 1024 * 1024;
+    const targetBytes = targetSizeMB * 1024 * 1024;
+    const totalBits = targetBytes * 8 * 0.95;
     const audioBitrateK = hasAudio ? 96 : 0;
     const totalBitrateK = Math.floor(totalBits / duration / 1000);
-    const videoBitrateK = Math.max(100, totalBitrateK - audioBitrateK);
+    const minimumVideoBitrateK = 100;
 
-    if (useHw && hwInfo.isAvailable) {
-      videoEncoder = hwInfo.h264Encoder;
-      isHwUsed = true;
-      args.push("-c:v", videoEncoder, "-b:v", `${videoBitrateK}k`);
-    } else {
-      args.push(
-        "-c:v", "libx264",
-        "-b:v", `${videoBitrateK}k`,
-        "-maxrate", `${Math.floor(videoBitrateK * 1.4)}k`,
-        "-bufsize", `${Math.floor(videoBitrateK * 2)}k`
+    if (totalBitrateK < audioBitrateK + minimumVideoBitrateK) {
+      const minimumSizeMB = (
+        ((audioBitrateK + minimumVideoBitrateK) * 1000 * duration) /
+        (8 * 0.95 * 1024 * 1024)
+      ).toFixed(2);
+      throw new Error(
+        `Target size ${targetSizeMB} MB is too small for this duration; minimum is approximately ${minimumSizeMB} MB`
       );
     }
 
-    args.push("-pix_fmt", "yuv420p");
-    if (hasAudio) {
-      args.push("-c:a", "aac", "-b:a", `${audioBitrateK}k`);
+    const videoBitrateK = totalBitrateK - audioBitrateK;
+    videoEncoder = "libx264";
+    const passId = `ffmpeg-mcp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const passLog = path.join(os.tmpdir(), passId);
+    const extension = path.extname(output);
+    const stagedOutput = path.join(
+      path.dirname(output),
+      `.${path.basename(output, extension)}-${passId}${extension}`
+    );
+    const videoArgs = [
+      "-c:v", "libx264",
+      "-b:v", `${videoBitrateK}k`,
+      "-maxrate", `${Math.floor(videoBitrateK * 1.4)}k`,
+      "-bufsize", `${Math.floor(videoBitrateK * 2)}k`,
+      "-pix_fmt", "yuv420p",
+    ];
+
+    let result;
+    try {
+      await runFfmpeg(
+        [...args, ...videoArgs, "-pass", "1", "-passlogfile", passLog, "-an", "-f", "null", "-"],
+        { signal: options?.signal, expectedDurationSeconds: duration }
+      );
+
+      const secondPassArgs = [
+        ...args,
+        ...videoArgs,
+        "-pass", "2",
+        "-passlogfile", passLog,
+      ];
+      if (hasAudio) {
+        secondPassArgs.push("-c:a", "aac", "-b:a", `${audioBitrateK}k`);
+      }
+      secondPassArgs.push("-movflags", "+faststart", "-y", stagedOutput);
+
+      result = await runFfmpeg(secondPassArgs, {
+        signal: options?.signal,
+        onProgress: options?.onProgress,
+        expectedDurationSeconds: duration,
+      });
+
+      const stagedStats = fs.statSync(stagedOutput);
+      if (stagedStats.size > targetBytes) {
+        throw new Error(
+          `Compressed output is ${(stagedStats.size / (1024 * 1024)).toFixed(2)} MB, exceeding the ${targetSizeMB} MB target`
+        );
+      }
+      fs.renameSync(stagedOutput, output);
+    } finally {
+      if (fs.existsSync(stagedOutput)) {
+        try { fs.unlinkSync(stagedOutput); } catch {}
+      }
+      for (const file of fs.readdirSync(os.tmpdir())) {
+        if (file.startsWith(passId)) {
+          try { fs.unlinkSync(path.join(os.tmpdir(), file)); } catch {}
+        }
+      }
     }
-    args.push("-movflags", "+faststart");
+
+    const statsAfter = fs.statSync(output);
+    return {
+      success: true,
+      outputPath: output,
+      originalSizeBytes: statsBefore.size,
+      compressedSizeBytes: statsAfter.size,
+      compressionRatio: `${((1 - (statsAfter.size / statsBefore.size)) * 100).toFixed(1)}%`,
+      hardwareAccelerated: isHwUsed,
+      encoderUsed: videoEncoder,
+      commandExecuted: result.command,
+      durationSeconds: result.durationSeconds,
+    };
   } else {
     let chosenCrf = 26;
     if (crf !== undefined) {
