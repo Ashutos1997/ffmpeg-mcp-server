@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -34,6 +35,7 @@ const testFiles = [
   "./test_thumb.png",
   "./test_compressed.mp4",
   "./test_concatenated.mp4",
+  "./test_reencoded_concat.mp4",
   "./test_waveform.png",
   "./test_subtitled.mp4",
   "./test_speed.mp4",
@@ -161,6 +163,17 @@ async function runTests() {
     mode: "lossless",
   });
   console.log("✓ Concatenated:", concat.outputPath, `(${concat.totalInputs} clips)`);
+
+  const reencodedConcat = await concatMedia({
+    inputPaths: ["./test_input2.mp4", "./test_output.webm"],
+    outputPath: "./test_reencoded_concat.mp4",
+    mode: "reencode",
+  });
+  const reencodedConcatProbe = await probeMedia(reencodedConcat.outputPath);
+  assert.ok(
+    reencodedConcatProbe.format.durationSeconds >= 4.8,
+    `Expected both clips in reencoded concat, got ${reencodedConcatProbe.format.durationSeconds}s`
+  );
 
   console.log("\n=== Testing 9: generate_waveform (Multimodal Base64) ===");
   const wave = await generateWaveform({
