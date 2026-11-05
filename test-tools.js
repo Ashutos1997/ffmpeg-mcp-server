@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -206,13 +207,26 @@ async function runTests() {
 
   console.log("\n=== Testing 14: create_split_screen (Top/Bottom Stack + Subtitles) ===");
   const split = await createSplitScreen({
-    firstVideoPath: "./test_input.mp4",
-    secondVideoPath: "./test_input2.mp4",
+    firstVideoPath: "./test_input2.mp4",
+    secondVideoPath: "./test_input.mp4",
     outputPath: "./test_split_screen.mp4",
     layout: "vertical_9_16",
     audioSource: "mix",
     subtitlesPath: "./test_dummy.srt",
   });
+  const { stdout: splitProbeJson } = await execAsync("ffprobe", [
+    "-v", "error",
+    "-show_entries", "stream=codec_type,duration",
+    "-of", "json",
+    split.outputPath,
+  ]);
+  const splitStreams = JSON.parse(splitProbeJson).streams;
+  const splitVideoDuration = Number(splitStreams.find((stream) => stream.codec_type === "video").duration);
+  const splitAudioDuration = Number(splitStreams.find((stream) => stream.codec_type === "audio").duration);
+  assert.ok(
+    Math.abs(splitVideoDuration - splitAudioDuration) < 0.15,
+    `Expected aligned split-screen streams, got video=${splitVideoDuration}s audio=${splitAudioDuration}s`
+  );
   console.log("✓ Split Screen Reel:", split.outputPath, split.resolution, `Subtitles: ${split.subtitlesEmbedded}`, `HwAccel: ${split.hardwareAccelerated}`);
 
   console.log("\n=== Testing 15 (NEW): burn_subtitles (Hardcoded Subtitles) ===");
