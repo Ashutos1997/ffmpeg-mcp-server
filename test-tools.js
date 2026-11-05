@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -36,6 +37,9 @@ const testFiles = [
   "./test_concatenated.mp4",
   "./test_waveform.png",
   "./test_subtitled.mp4",
+  "./test_pre_subtitled.mp4",
+  "./test_old.srt",
+  "./test_new.srt",
   "./test_speed.mp4",
   "./test_dummy.srt",
   "./test_reformatted.mp4",
@@ -178,6 +182,39 @@ async function runTests() {
     title: "English Subs",
   });
   console.log("✓ Subtitled:", sub.outputPath, `Codec: ${sub.subtitleCodec}`);
+
+  fs.writeFileSync(
+    "./test_old.srt",
+    "1\n00:00:00,000 --> 00:00:01,000\nOLD_TRACK\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    "./test_new.srt",
+    "1\n00:00:00,000 --> 00:00:01,000\nNEW_TRACK\n",
+    "utf8"
+  );
+  await execAsync("ffmpeg", [
+    "-i", "./test_input.mp4",
+    "-i", "./test_old.srt",
+    "-map", "0:v",
+    "-map", "0:a",
+    "-map", "1:s",
+    "-c", "copy",
+    "-c:s", "mov_text",
+    "-y", "./test_pre_subtitled.mp4",
+  ]);
+  await addSubtitles({
+    videoPath: "./test_pre_subtitled.mp4",
+    subtitlesPath: "./test_new.srt",
+    outputPath: "./test_subtitled.mp4",
+  });
+  const { stdout: extractedSubtitle } = await execAsync("ffmpeg", [
+    "-i", "./test_subtitled.mp4",
+    "-map", "0:s:0",
+    "-f", "srt",
+    "-",
+  ]);
+  assert.match(extractedSubtitle, /NEW_TRACK/);
 
   console.log("\n=== Testing 11: change_speed ===");
   const speed = await changeSpeed({
