@@ -27,6 +27,13 @@ export const trimMediaSchema = z.object({
 
 export type TrimMediaParams = z.infer<typeof trimMediaSchema>;
 
+function timestampToSeconds(timestamp: string): number {
+  const parts = timestamp.split(":").map(Number);
+  if (parts.length === 1) return parts[0];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return parts[0] * 3600 + parts[1] * 60 + parts[2];
+}
+
 export async function trimMedia(
   params: TrimMediaParams,
   options?: { signal?: AbortSignal; onProgress?: (p: FfmpegProgress) => void }
@@ -45,7 +52,11 @@ export async function trimMedia(
   args.push("-i", input);
 
   if (params.endTime) {
-    args.push("-to", params.endTime);
+    const duration = timestampToSeconds(params.endTime) - timestampToSeconds(params.startTime);
+    if (duration <= 0) {
+      throw new Error("endTime must be later than startTime");
+    }
+    args.push("-t", String(duration));
   } else if (params.duration) {
     args.push("-t", params.duration);
   }
