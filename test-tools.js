@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -33,6 +34,7 @@ const testFiles = [
   "./test_audio.wav",
   "./test_thumb.png",
   "./test_compressed.mp4",
+  "./test_target_compressed.mp4",
   "./test_concatenated.mp4",
   "./test_waveform.png",
   "./test_subtitled.mp4",
@@ -153,6 +155,23 @@ async function runTests() {
     preset: "github_pr",
   });
   console.log("✓ Compressed:", comp.outputPath, "Encoder:", comp.encoderUsed, "HwAccel:", comp.hardwareAccelerated);
+
+  await assert.rejects(
+    compressMedia({
+      inputPath: "./test_input.mp4",
+      outputPath: "./test_target_compressed.mp4",
+      targetSizeMB: 0.01,
+      hardwareAcceleration: false,
+    }),
+    /too small/
+  );
+  const targetComp = await compressMedia({
+    inputPath: "./test_input.mp4",
+    outputPath: "./test_target_compressed.mp4",
+    targetSizeMB: 0.2,
+    hardwareAcceleration: false,
+  });
+  assert.ok(targetComp.compressedSizeBytes <= 0.2 * 1024 * 1024);
 
   console.log("\n=== Testing 8: concat_media ===");
   const concat = await concatMedia({
