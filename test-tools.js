@@ -19,6 +19,8 @@ import { burnSubtitles } from "./dist/tools/burn_subtitles.js";
 import { extractKeyframes } from "./dist/tools/keyframes.js";
 import { normalizeAudio } from "./dist/tools/normalize.js";
 import { addOverlay } from "./dist/tools/overlay.js";
+import { muxMedia } from "./dist/tools/mux.js";
+import { detectScenes } from "./dist/tools/detect_scenes.js";
 import { detectHwAccel } from "./dist/utils/hwaccel.js";
 
 const execAsync = promisify(execFile);
@@ -45,6 +47,8 @@ const testFiles = [
   "./test_keyframes_grid.png",
   "./test_normalized.mp4",
   "./test_overlayed.mp4",
+  "./test_muxed.mp4",
+  "./test_scenes_sheet.png",
 ];
 
 function cleanup() {
@@ -261,7 +265,26 @@ async function runTests() {
   });
   console.log("✓ Watermark Overlay:", overlay.outputPath, "Position:", overlay.position, "Opacity:", overlay.opacity, "HwAccel:", overlay.hardwareAccelerated);
 
-  console.log("\n=== Testing 19 (NEW): AbortSignal Cancellation ===");
+  console.log("\n=== Testing 19 (NEW): mux_media (Stream Copy Video + Audio Track) ===");
+  const muxed = await muxMedia({
+    videoPath: "./test_input.mp4",
+    audioPath: "./test_audio.wav",
+    outputPath: "./test_muxed.mp4",
+    mode: "replace",
+    streamCopyVideo: true,
+  });
+  console.log("✓ Muxed Media:", muxed.outputPath, "Mode:", muxed.mode, "Encoder:", muxed.encoderUsed);
+
+  console.log("\n=== Testing 20 (NEW): detect_scenes (Scene Cuts + Contact Sheet) ===");
+  const scenes = await detectScenes({
+    inputPath: "./test_input.mp4",
+    threshold: 0.3,
+    minDurationSeconds: 0.2,
+    outputPath: "./test_scenes_sheet.png",
+  });
+  console.log("✓ Detected Scenes:", `Total: ${scenes.totalScenes} scenes, ${scenes.totalCuts} cuts`, "Sheet:", scenes.contactSheetPath ? "generated" : "none", "Base64 Length:", scenes.base64 ? scenes.base64.length : "none");
+
+  console.log("\n=== Testing 21 (NEW): AbortSignal Cancellation ===");
   const controller = new AbortController();
   // Abort after 50ms to ensure process is actively running when killed
   setTimeout(() => controller.abort(), 50);
@@ -283,7 +306,7 @@ async function runTests() {
     }
   }
 
-  console.log("\n🎉 ALL 19 TEST SUITES (17 TOOLS + HW ACCEL + PROGRESS + CANCELLATION) PASSED FLAWLESSLY!");
+  console.log("\n🎉 ALL 21 TEST SUITES (19 TOOLS + HW ACCEL + PROGRESS + CANCELLATION) PASSED FLAWLESSLY!");
   cleanup();
 }
 

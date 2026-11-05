@@ -14,7 +14,7 @@ Supports cross-platform GPU hardware encoding (Apple Silicon, NVIDIA NVENC, Inte
 
 When AI agents process media, they often hallucinate invalid flags, syntax errors, or incompatible pixel formats.
 
-This server provides **17 typed tools** using Zod schemas. The AI passes parameters (such as `{ inputPath: "video.mov", preset: "web_mp4" }`), and the server runs the valid FFmpeg command locally with proper error handling, hardware acceleration, and progress notifications.
+This server provides **19 typed tools** using Zod schemas. The AI passes parameters (such as `{ inputPath: "video.mov", preset: "web_mp4" }`), and the server runs the valid FFmpeg command locally with proper error handling, hardware acceleration, and progress notifications.
 
 ---
 
@@ -26,10 +26,11 @@ This server provides **17 typed tools** using Zod schemas. The AI passes paramet
 * **Multimodal Vision Previews:** Inlines base64 image data for thumbnails, audio waveforms, and multi-frame contact sheets so vision models (Claude 3.7, GPT-4o, Gemini) can "see" media content.
 * **Social Formats & Automation:** Reformats landscape video to 9:16 vertical video with blurred backgrounds, burns customizable hardcoded subtitles, and stacks top/bottom split-screen reels for TikTok and Instagram Reels.
 * **Audio Engineering:** Normalizes loudness to broadcast/streaming standards (EBU R128 / -16 LUFS), cleans vocal audio with 80Hz rumble removal, and trims dead air while preserving lip-sync.
+* **Scene Intelligence & Multiplexing:** Detects visual scene changes and cut points for smart editing workflows, and combines or replaces video/audio tracks with zero-loss stream copy.
 
 ---
 
-## Included Tools (17 Total)
+## Included Tools (19 Total)
 
 | Tool | Description | Key Parameters |
 | :--- | :--- | :--- |
@@ -45,11 +46,13 @@ This server provides **17 typed tools** using Zod schemas. The AI passes paramet
 | **`concat_media`** | Joins multiple video or audio files in order using stream copy or re-encoding. | `inputPaths`, `outputPath`, `mode` |
 | **`generate_waveform`** | Generates a PNG waveform image. Returns base64 image data for vision models. | `inputPath`, `outputPath`, `width`, `height`, `color`, `scale`, `includeBase64` |
 | **`add_subtitles`** | Embeds SRT or VTT subtitle tracks into MP4/MKV video files without re-encoding video. | `videoPath`, `subtitlesPath`, `outputPath`, `language`, `title` |
-| **`burn_subtitles`** *(New)* | Hardcodes subtitles directly onto video frames with customizable font size, colors, and margins. | `videoPath`, `subtitlesPath`, `outputPath`, `fontSize`, `fontColor`, `outlineColor`, `marginV` |
-| **`extract_keyframes`** *(New)* | Extracts multiple representative frames across the video and generates a contact sheet grid for vision AI. | `inputPath`, `outputPath`, `count`, `layout`, `includeBase64` |
-| **`normalize_audio`** *(New)* | Normalizes audio loudness using EBU R128 (default -16 LUFS) with optional speech clarity high-pass filter. | `inputPath`, `outputPath`, `targetLufs`, `targetPeakDb`, `voiceClarity` |
-| **`add_overlay`** *(New)* | Places a watermark image or logo PNG over video with customizable corner position, scale, and opacity. | `videoPath`, `overlayPath`, `outputPath`, `position`, `padding`, `scaleWidth`, `opacity` |
+| **`burn_subtitles`** | Hardcodes subtitles directly onto video frames with customizable font size, colors, and margins. | `videoPath`, `subtitlesPath`, `outputPath`, `fontSize`, `fontColor`, `outlineColor`, `marginV` |
+| **`extract_keyframes`** | Extracts multiple representative frames across the video and generates a contact sheet grid for vision AI. | `inputPath`, `outputPath`, `count`, `layout`, `includeBase64` |
+| **`normalize_audio`** | Normalizes audio loudness using EBU R128 (default -16 LUFS) with optional speech clarity high-pass filter. | `inputPath`, `outputPath`, `targetLufs`, `targetPeakDb`, `voiceClarity` |
+| **`add_overlay`** | Places a watermark image or logo PNG over video with customizable corner position, scale, and opacity. | `videoPath`, `overlayPath`, `outputPath`, `position`, `padding`, `scaleWidth`, `opacity` |
 | **`change_speed`** | Adjusts playback speed (such as 2x fast forward or 0.5x slow motion) with pitch correction. | `inputPath`, `outputPath`, `speed`, `muteAudio` |
+| **`mux_media`** *(New)* | Combines or replaces video and audio streams with optional audio offset delay and zero-loss stream copy. | `videoPath`, `audioPath`, `outputPath`, `mode`, `audioOffsetSeconds`, `streamCopyVideo`, `shortest` |
+| **`detect_scenes`** *(New)* | Detects video cut points and scene transitions with adjustable sensitivity. Returns timestamps, scene durations, and an optional contact sheet. | `inputPath`, `threshold`, `minDurationSeconds`, `outputPath`, `includeBase64` |
 
 ---
 
@@ -111,6 +114,12 @@ Run directly with `npx` (no manual cloning or building required):
    ```bash
    npm test
    ```
+
+---
+
+## Acknowledgements & Community
+
+Special thanks to [@rajarshidattapy](https://github.com/rajarshidattapy) for suggesting the stream multiplexing (`mux_media`) and scene transition detection (`detect_scenes`) capabilities to expand the server beyond format conversion.
 
 ---
 

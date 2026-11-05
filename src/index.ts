@@ -20,12 +20,14 @@ import { burnSubtitles, burnSubtitlesSchema } from "./tools/burn_subtitles.js";
 import { extractKeyframes, extractKeyframesSchema } from "./tools/keyframes.js";
 import { normalizeAudio, normalizeAudioSchema } from "./tools/normalize.js";
 import { addOverlay, addOverlaySchema } from "./tools/overlay.js";
+import { muxMedia, muxMediaSchema } from "./tools/mux.js";
+import { detectScenes, detectScenesSchema } from "./tools/detect_scenes.js";
 import { detectHwAccel } from "./utils/hwaccel.js";
 import { FfmpegProgress, runCommand } from "./utils/exec.js";
 
 const server = new McpServer({
   name: "ffmpeg-mcp-server",
-  version: "0.5.0",
+  version: "0.6.0",
 });
 
 function createProgressCallback(extra: any) {
@@ -491,6 +493,69 @@ server.tool(
       return {
         isError: true,
         content: [{ type: "text", text: `Error adding overlay: ${err.message}` }],
+      };
+    }
+  }
+);
+
+// Tool 18: Mux Media
+server.tool(
+  "mux_media",
+  "Combine or replace video and audio streams. Takes a video file and an audio track, with optional audio delay offset, stream-copy mode for zero quality loss, and 'replace' or 'add' stream mapping.",
+  muxMediaSchema.shape,
+  async (args, extra) => {
+    try {
+      const onProgress = createProgressCallback(extra);
+      const result = await muxMedia(args, { signal: extra.signal, onProgress });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Successfully muxed media:\nOutput: ${result.outputPath}\nMode: ${result.mode}\nEncoder: ${result.encoderUsed} (Hardware Accelerated: ${result.hardwareAccelerated})\nAudio Offset: ${result.audioOffsetSeconds}s\nCommand: ${result.commandExecuted}`,
+          },
+        ],
+      };
+    } catch (err: any) {
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Error muxing media: ${err.message}` }],
+      };
+    }
+  }
+);
+
+// Tool 19: Detect Scenes
+server.tool(
+  "detect_scenes",
+  "Detect video cuts and scene transitions. Returns structured timestamps, scene durations, and cut boundaries as JSON, with optional contact-sheet image preview for vision models.",
+  detectScenesSchema.shape,
+  async (args, extra) => {
+    try {
+      const onProgress = createProgressCallback(extra);
+      const result = await detectScenes(args, { signal: extra.signal, onProgress });
+      const content: any[] = [];
+      if (result.base64 && result.mimeType) {
+        content.push({
+          type: "image",
+          data: result.base64,
+          mimeType: result.mimeType,
+        });
+      }
+      const scenesList = result.scenes
+        .map(
+          (s) =>
+            `  • Scene ${s.sceneIndex}: ${s.startTimeSeconds}s - ${s.endTimeSeconds}s (${s.durationSeconds}s)`
+        )
+        .join("\n");
+      content.push({
+        type: "text",
+        text: `Successfully detected ${result.totalScenes} scenes (${result.totalCuts} cuts):\nCut Timestamps: [${result.cutTimestamps.join(", ")}]\n\nScenes:\n${scenesList}${result.contactSheetPath ? `\n\nContact Sheet: ${result.contactSheetPath}` : ""}\nCommand: ${result.commandExecuted}`,
+      });
+      return { content };
+    } catch (err: any) {
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Error detecting scenes: ${err.message}` }],
       };
     }
   }

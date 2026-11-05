@@ -14,7 +14,7 @@ AI 에이전트와 도구가 로컬에서 비디오 및 오디오를 처리할 �
 
 AI 에이전트에게 영상 처리를 직접 명령하면 잘못된 플래그, 문법 오류, 지원되지 않는 픽셀 포맷 등을 만들어내어 작업이 실패하기 쉽습니다.
 
-본 서버는 Zod 스키마로 정의된 **17가지 타입 안전한 도구(Typed Tools)**를 제공합니다. AI가 `{ inputPath: "video.mov", preset: "web_mp4" }`와 같은 구조화된 매개변수를 전달하면, 서버가 유효한 FFmpeg 명령어를 로컬에서 직접 실행하며 안정적인 에러 처리, 하드웨어 가속 및 진행률 알림을 수행합니다.
+본 서버는 Zod 스키마로 정의된 **19가지 타입 안전한 도구(Typed Tools)**를 제공합니다. AI가 `{ inputPath: "video.mov", preset: "web_mp4" }`와 같은 구조화된 매개변수를 전달하면, 서버가 유효한 FFmpeg 명령어를 로컬에서 직접 실행하며 안정적인 에러 처리, 하드웨어 가속 및 진행률 알림을 수행합니다.
 
 ---
 
@@ -26,10 +26,11 @@ AI 에이전트에게 영상 처리를 직접 명령하면 잘못된 플래그, 
 * **멀티모달 비전 모델용 프리뷰:** 썸네일, 오디오 파형, 멀티 프레임 콘택트 시트를 base64 이미지 데이터로 인라인 반환하여 Claude 3.7, GPT-4o, Gemini 등의 비전 모델이 미디어를 직접 "볼" 수 있습니다.
 * **숏폼/소셜 포맷 자동화:** 가로 영상을 배경 블러 처리된 9:16 세로 숏폼 영상으로 변환하고, 스타일이 적용된 자막을 하드코딩(버닝)하며, 틱톡/릴스용 상하 분할 스플릿 스크린 영상을 제작합니다.
 * **오디오 엔지니어링:** 스트리밍/방송 표준(EBU R128 / -16 LUFS)에 맞춰 음량을 정규화하고, 80Hz 럼블 제거 필터로 음성을 선명하게 보정하며, 립싱크를 유지하면서 무음 구간을 자동으로 잘라냅니다.
+* **장면 감지 및 스트림 결합:** 시각적 장면 전환(컷 편집 지점)을 감지하여 타임스탬프와 콘택트 시트를 반환하고, 무손실 스트림 복사로 비디오와 오디오를 즉시 결합/교체합니다.
 
 ---
 
-## 제공 도구 목록 (총 17개)
+## 제공 도구 목록 (총 19개)
 
 | 도구명 | 설명 | 주요 매개변수 |
 | :--- | :--- | :--- |
@@ -45,11 +46,13 @@ AI 에이전트에게 영상 처리를 직접 명령하면 잘못된 플래그, 
 | **`concat_media`** | 여러 비디오 또는 오디오 파일을 순서대로 병합합니다. 스트림 복사 및 재인코딩 방식을 지원합니다. | `inputPaths`, `outputPath`, `mode` |
 | **`generate_waveform`** | 오디오 파형(Waveform) PNG 이미지를 생성합니다. 비전 모델을 위한 base64 데이터를 반환할 수 있습니다. | `inputPath`, `outputPath`, `width`, `height`, `color`, `scale`, `includeBase64` |
 | **`add_subtitles`** | 비디오 재인코딩 없이 SRT 또는 VTT 자막 트랙을 MP4/MKV 파일에 소프트웨어 자막으로 삽입합니다. | `videoPath`, `subtitlesPath`, `outputPath`, `language`, `title` |
-| **`burn_subtitles`** *(신규)* | 폰트 크기, 글자 색상, 외곽선, 여백을 커스텀하여 비디오 프레임에 자막을 직접 하드코딩(버닝)합니다. | `videoPath`, `subtitlesPath`, `outputPath`, `fontSize`, `fontColor`, `outlineColor`, `marginV` |
-| **`extract_keyframes`** *(신규)* | 영상 전반에 걸쳐 대표 키프레임을 추출하고 비전 AI가 한눈에 볼 수 있는 그리드형 콘택트 시트를 생성합니다. | `inputPath`, `outputPath`, `count`, `layout`, `includeBase64` |
-| **`normalize_audio`** *(신규)* | EBU R128 표준(기본 -16 LUFS)을 적용해 오디오 음량을 균일하게 정규화하고 80Hz 고역 통과 필터로 음성을 선명하게 다듬습니다. | `inputPath`, `outputPath`, `targetLufs`, `targetPeakDb`, `voiceClarity` |
-| **`add_overlay`** *(신규)* | 워터마크 이미지나 로고 PNG를 영상 모서리에 오버레이하며 위치, 여백, 크기 비율, 투명도를 조절할 수 있습니다. | `videoPath`, `overlayPath`, `outputPath`, `position`, `padding`, `scaleWidth`, `opacity` |
+| **`burn_subtitles`** | 폰트 크기, 글자 색상, 외곽선, 여백을 커스텀하여 비디오 프레임에 자막을 직접 하드코딩(버닝)합니다. | `videoPath`, `subtitlesPath`, `outputPath`, `fontSize`, `fontColor`, `outlineColor`, `marginV` |
+| **`extract_keyframes`** | 영상 전반에 걸쳐 대표 키프레임을 추출하고 비전 AI가 한눈에 볼 수 있는 그리드형 콘택트 시트를 생성합니다. | `inputPath`, `outputPath`, `count`, `layout`, `includeBase64` |
+| **`normalize_audio`** | EBU R128 표준(기본 -16 LUFS)을 적용해 오디오 음량을 균일하게 정규화하고 80Hz 고역 통과 필터로 음성을 선명하게 다듬습니다. | `inputPath`, `outputPath`, `targetLufs`, `targetPeakDb`, `voiceClarity` |
+| **`add_overlay`** | 워터마크 이미지나 로고 PNG를 영상 모서리에 오버레이하며 위치, 여백, 크기 비율, 투명도를 조절할 수 있습니다. | `videoPath`, `overlayPath`, `outputPath`, `position`, `padding`, `scaleWidth`, `opacity` |
 | **`change_speed`** | 피치(음높이) 왜곡 없이 재생 속도를 배속(2배속 고속, 0.5배속 슬로우 모션 등)으로 조절합니다. | `inputPath`, `outputPath`, `speed`, `muteAudio` |
+| **`mux_media`** *(신규)* | 비디오와 오디오 스트림을 결합하거나 교체(더빙/음악 삽입)합니다. 오디오 지연 오프셋 및 무손실 스트림 복사를 지원합니다. | `videoPath`, `audioPath`, `outputPath`, `mode`, `audioOffsetSeconds`, `streamCopyVideo`, `shortest` |
+| **`detect_scenes`** *(신규)* | 비디오의 장면 전환 및 컷 편집 지점을 감지합니다. 타임스탬프, 구간별 재생 시간, 콘택트 시트 프리뷰를 JSON 및 이미지로 반환합니다. | `inputPath`, `threshold`, `minDurationSeconds`, `outputPath`, `includeBase64` |
 
 ---
 
@@ -111,6 +114,12 @@ AI 에이전트에게 영상 처리를 직접 명령하면 잘못된 플래그, 
    ```bash
    npm test
    ```
+
+---
+
+## 감사의 글 (Acknowledgements & Community)
+
+단순 포맷 변환을 넘어 스트림 멀티플렉싱(`mux_media`) 및 장면 전환 감지 기능(`detect_scenes`)을 제안해 주신 [@rajarshidattapy](https://github.com/rajarshidattapy) 님께 감사드립니다.
 
 ---
 
