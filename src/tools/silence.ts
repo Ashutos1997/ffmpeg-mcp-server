@@ -96,7 +96,7 @@ export async function trimSilence(
     const ffmpegArgs: string[] = ["-ss", startTime.toFixed(3), "-i", input];
 
     if (endTime < originalDuration) {
-      ffmpegArgs.push("-to", endTime.toFixed(3));
+      ffmpegArgs.push("-t", Math.max(0, endTime - startTime).toFixed(3));
     }
 
     if (hwInfo.isAvailable) {

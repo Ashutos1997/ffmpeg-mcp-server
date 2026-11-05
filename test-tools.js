@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -30,6 +31,7 @@ const testFiles = [
   "./test_output.webm",
   "./test_output.gif",
   "./test_trimmed.mp4",
+  "./test_trimmed_end_time.mp4",
   "./test_audio.wav",
   "./test_thumb.png",
   "./test_compressed.mp4",
@@ -129,6 +131,19 @@ async function runTests() {
     duration: "1",
   });
   console.log("✓ Trimmed:", trim.outputPath);
+
+  const trimWithEndTime = await trimMedia({
+    inputPath: "./test_input.mp4",
+    outputPath: "./test_trimmed_end_time.mp4",
+    startTime: "1",
+    endTime: "2",
+    accurateReencode: true,
+  });
+  const trimmedProbe = await probeMedia(trimWithEndTime.outputPath);
+  assert.ok(
+    Math.abs(trimmedProbe.format.durationSeconds - 1) < 0.15,
+    `Expected a 1s trim, got ${trimmedProbe.format.durationSeconds}s`
+  );
 
   console.log("\n=== Testing 5: extract_audio (Whisper 16kHz WAV) ===");
   const audio = await extractAudio({
