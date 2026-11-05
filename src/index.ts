@@ -589,7 +589,7 @@ server.registerResource(
         hevcEncoder: hwInfo.hevcEncoder,
       },
       availableEncoders: hwInfo.encoders,
-      totalToolsActive: 17,
+      totalToolsActive: 19,
     };
 
     return {
@@ -712,7 +712,7 @@ server.registerPrompt(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("FFmpeg MCP Server running on stdio (17 tools, 2 resources, 2 prompts active)");
+  console.error("FFmpeg MCP Server running on stdio (19 tools, 2 resources, 2 prompts active)");
 }
 
 main().catch((err) => {
