@@ -37,6 +37,9 @@ export async function addSubtitles(
   const args: string[] = [
     "-i", video,
     "-i", subs,
+    "-map", "0:v?",
+    "-map", "0:a?",
+    "-map", "1:s:0",
     "-c:v", "copy",
     "-c:a", "copy",
     "-c:s", subtitleCodec,
