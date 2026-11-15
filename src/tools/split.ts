@@ -93,7 +93,7 @@ export async function createSplitScreen(
   // Audio filter handling
   let audioMapped = false;
   if (audioSource === "mix" && firstHasAudio && secondHasAudio) {
-    filter += ";[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2[outa]";
+    filter += ";[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=2[outa]";
     args.push("-filter_complex", filter, "-map", "[outv]", "-map", "[outa]");
     audioMapped = true;
   } else {
