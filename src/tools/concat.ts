@@ -4,21 +4,66 @@ import os from "node:os";
 import { z } from "zod";
 import { runFfmpeg, ensureFileExists, ensureOutputDir, FfmpegProgress } from "../utils/exec.js";
 import { detectHwAccel } from "../utils/hwaccel.js";
-import { probeMedia } from "./probe.js";
+import { probeMedia, ProbeSummary } from "./probe.js";
 
 export const concatMediaSchema = z.object({
   inputPaths: z.array(z.string()).min(2).describe("List of media files to concatenate in sequential order"),
   outputPath: z.string().describe("Target output file path"),
-  mode: z.enum(["lossless", "reencode"]).optional().default("lossless").describe("Concatenation mode. 'lossless' uses stream copy without quality loss (inputs must share codecs). 'reencode' normalizes differing resolutions/codecs."),
+  mode: z
+    .enum(["auto", "lossless", "reencode"])
+    .optional()
+    .default("auto")
+    .describe(
+      "Concatenation mode. 'auto' (default) probes inputs to check codecs, resolutions, framerates, and audio sample rates, using fast stream copy if matching or falling back to re-encoding if they differ. 'lossless' forces stream copy. 'reencode' forces filtergraph normalization."
+    ),
 });
 
 export type ConcatMediaParams = z.infer<typeof concatMediaSchema>;
+
+function canUseLosslessConcat(probes: ProbeSummary[]): boolean {
+  if (probes.length < 2) return true;
+  const first = probes[0];
+
+  for (let i = 1; i < probes.length; i++) {
+    const current = probes[i];
+
+    if (first.videoStreams.length !== current.videoStreams.length) return false;
+    for (let v = 0; v < first.videoStreams.length; v++) {
+      const fv = first.videoStreams[v];
+      const cv = current.videoStreams[v];
+      if (
+        fv.codec !== cv.codec ||
+        fv.width !== cv.width ||
+        fv.height !== cv.height ||
+        fv.fps !== cv.fps ||
+        fv.pixelFormat !== cv.pixelFormat
+      ) {
+        return false;
+      }
+    }
+
+    if (first.audioStreams.length !== current.audioStreams.length) return false;
+    for (let a = 0; a < first.audioStreams.length; a++) {
+      const fa = first.audioStreams[a];
+      const ca = current.audioStreams[a];
+      if (
+        fa.codec !== ca.codec ||
+        fa.sampleRateHz !== ca.sampleRateHz ||
+        fa.channels !== ca.channels
+      ) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
 
 export async function concatMedia(
   params: ConcatMediaParams,
   options?: { signal?: AbortSignal; onProgress?: (p: FfmpegProgress) => void }
 ) {
-  const { inputPaths, outputPath, mode = "lossless" } = params;
+  const { inputPaths, outputPath, mode = "auto" } = params;
 
   const resolvedInputs: string[] = [];
   for (const p of inputPaths) {
@@ -26,10 +71,22 @@ export async function concatMedia(
   }
   const output = await ensureOutputDir(outputPath);
 
-  if (mode === "reencode") {
-    const probes = await Promise.all(
+  let effectiveMode: "lossless" | "reencode" = mode === "reencode" ? "reencode" : "lossless";
+  let probes: ProbeSummary[] | null = null;
+
+  if (mode === "auto") {
+    probes = await Promise.all(
       resolvedInputs.map((input) => probeMedia(input, { signal: options?.signal }))
     );
+    effectiveMode = canUseLosslessConcat(probes) ? "lossless" : "reencode";
+  }
+
+  if (effectiveMode === "reencode") {
+    if (!probes) {
+      probes = await Promise.all(
+        resolvedInputs.map((input) => probeMedia(input, { signal: options?.signal }))
+      );
+    }
     const allVideo = probes.every((probe) => probe.videoStreams.length > 0);
     const allAudioOnly = probes.every(
       (probe) => probe.videoStreams.length === 0 && probe.audioStreams.length > 0
@@ -123,7 +180,8 @@ export async function concatMedia(
       success: true,
       outputPath: output,
       totalInputs: resolvedInputs.length,
-      mode,
+      mode: effectiveMode,
+      strategyUsed: effectiveMode,
       commandExecuted: result.command,
       durationSeconds: result.durationSeconds,
     };
@@ -152,7 +210,8 @@ export async function concatMedia(
       success: true,
       outputPath: output,
       totalInputs: resolvedInputs.length,
-      mode,
+      mode: effectiveMode,
+      strategyUsed: effectiveMode,
       commandExecuted: result.command,
       durationSeconds: result.durationSeconds,
     };

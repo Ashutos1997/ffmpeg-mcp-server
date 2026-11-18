@@ -63,7 +63,7 @@ Add directly to your client configuration (no manual cloning required):
 | **`reformat_aspect_ratio`** | Changes video ratio to 9:16 vertical, 1:1 square, or 4:5 portrait with blurred borders or center crop. | `inputPath`, `outputPath`, `targetRatio`, `mode`, `blurAmount`, `padColor`, `hardwareAcceleration` |
 | **`create_split_screen`** | Stacks two videos top-and-bottom (9:16 Reels/TikTok) or side-by-side with audio mixing and subtitles. | `firstVideoPath`, `secondVideoPath`, `outputPath`, `layout`, `audioSource`, `subtitlesPath` |
 | **`trim_silence`** | Detects and removes silent pauses from recordings while preserving video & audio lip-sync. | `inputPath`, `outputPath`, `mode`, `thresholdDb`, `minDurationSeconds` |
-| **`concat_media`** | Joins multiple video or audio files in order using stream copy or re-encoding. | `inputPaths`, `outputPath`, `mode` |
+| **`concat_media`** | Joins multiple media files in order. Automatically probes inputs to select stream copy or re-encoding. | `inputPaths`, `outputPath`, `mode` |
 | **`generate_waveform`** | Generates a PNG waveform image. Returns base64 image data for vision models. | `inputPath`, `outputPath`, `width`, `height`, `color`, `scale`, `includeBase64` |
 | **`add_subtitles`** | Embeds SRT or VTT subtitle tracks into MP4/MKV video files without re-encoding video. | `videoPath`, `subtitlesPath`, `outputPath`, `language`, `title` |
 | **`burn_subtitles`** | Hardcodes subtitles directly onto video frames with customizable font size, colors, and margins. | `videoPath`, `subtitlesPath`, `outputPath`, `fontSize`, `fontColor`, `outlineColor`, `marginV` |
@@ -139,7 +139,8 @@ Run directly with `npx` (no manual cloning or building required):
 
 ## Acknowledgements & Community
 
-Special thanks to [@rajarshidattapy](https://github.com/rajarshidattapy) for suggesting the stream multiplexing (`mux_media`) and scene transition detection (`detect_scenes`) capabilities to expand the server beyond format conversion.
+- Special thanks to [@rajarshidattapy](https://github.com/rajarshidattapy) for suggesting stream multiplexing (`mux_media`) and scene transition detection (`detect_scenes`) to expand the server beyond format conversion.
+- Special thanks to Reddit user [u/QuanTradin](https://www.reddit.com/user/QuanTradin/) for suggesting smart auto-probing in `concat_media` to prevent corrupted outputs when input stream parameters differ.
 
 ---
 

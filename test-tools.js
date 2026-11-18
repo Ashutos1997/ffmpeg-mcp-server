@@ -40,6 +40,7 @@ const testFiles = [
   "./test_target_compressed.mp4",
   "./test_concatenated.mp4",
   "./test_reencoded_concat.mp4",
+  "./test_auto_concat_mismatch.mp4",
   "./test_waveform.png",
   "./test_subtitled.mp4",
   "./test_pre_subtitled.mp4",
@@ -199,9 +200,9 @@ async function runTests() {
   const concat = await concatMedia({
     inputPaths: ["./test_input.mp4", "./test_input2.mp4"],
     outputPath: "./test_concatenated.mp4",
-    mode: "lossless",
   });
-  console.log("✓ Concatenated:", concat.outputPath, `(${concat.totalInputs} clips)`);
+  assert.strictEqual(concat.strategyUsed, "lossless");
+  console.log("✓ Concatenated (auto matching -> lossless):", concat.outputPath, `(${concat.totalInputs} clips)`);
 
   const reencodedConcat = await concatMedia({
     inputPaths: ["./test_input2.mp4", "./test_output.webm"],
@@ -213,6 +214,18 @@ async function runTests() {
     reencodedConcatProbe.format.durationSeconds >= 4.8,
     `Expected both clips in reencoded concat, got ${reencodedConcatProbe.format.durationSeconds}s`
   );
+
+  const autoMismatchConcat = await concatMedia({
+    inputPaths: ["./test_input2.mp4", "./test_output.webm"],
+    outputPath: "./test_auto_concat_mismatch.mp4",
+  });
+  assert.strictEqual(autoMismatchConcat.strategyUsed, "reencode");
+  const autoMismatchProbe = await probeMedia(autoMismatchConcat.outputPath);
+  assert.ok(
+    autoMismatchProbe.format.durationSeconds >= 4.8,
+    `Expected both clips in auto mismatched concat, got ${autoMismatchProbe.format.durationSeconds}s`
+  );
+  console.log("✓ Concatenated (auto mismatched -> reencode):", autoMismatchConcat.outputPath);
 
   console.log("\n=== Testing 9: generate_waveform (Multimodal Base64) ===");
   const wave = await generateWaveform({

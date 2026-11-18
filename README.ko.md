@@ -63,7 +63,7 @@ AI 에이전트에게 영상 처리를 직접 명령하면 잘못된 플래그, 
 | **`reformat_aspect_ratio`** | 배경 블러 패딩 또는 중앙 크롭을 적용해 영상 비율을 9:16(세로), 1:1(정사각형), 4:5(포트레이트)로 변환합니다. | `inputPath`, `outputPath`, `targetRatio`, `mode`, `blurAmount`, `padColor`, `hardwareAcceleration` |
 | **`create_split_screen`** | 두 개의 영상을 상하(9:16 숏폼/릴스) 또는 좌우로 배치하고 오디오 믹싱 및 자막을 합성합니다. | `firstVideoPath`, `secondVideoPath`, `outputPath`, `layout`, `audioSource`, `subtitlesPath` |
 | **`trim_silence`** | 영상과 음성의 립싱크를 완벽히 유지하면서 녹음/녹화 영상의 무음 구간(침묵)을 감지해 자동으로 잘라냅니다. | `inputPath`, `outputPath`, `mode`, `thresholdDb`, `minDurationSeconds` |
-| **`concat_media`** | 여러 비디오 또는 오디오 파일을 순서대로 병합합니다. 스트림 복사 및 재인코딩 방식을 지원합니다. | `inputPaths`, `outputPath`, `mode` |
+| **`concat_media`** | 여러 미디어 파일을 순서대로 병합합니다. 입력 파일을 자동 분석하여 스트림 복사 또는 재인코딩을 선택합니다. | `inputPaths`, `outputPath`, `mode` |
 | **`generate_waveform`** | 오디오 파형(Waveform) PNG 이미지를 생성합니다. 비전 모델을 위한 base64 데이터를 반환할 수 있습니다. | `inputPath`, `outputPath`, `width`, `height`, `color`, `scale`, `includeBase64` |
 | **`add_subtitles`** | 비디오 재인코딩 없이 SRT 또는 VTT 자막 트랙을 MP4/MKV 파일에 소프트웨어 자막으로 삽입합니다. | `videoPath`, `subtitlesPath`, `outputPath`, `language`, `title` |
 | **`burn_subtitles`** | 폰트 크기, 글자 색상, 외곽선, 여백을 커스텀하여 비디오 프레임에 자막을 직접 하드코딩(버닝)합니다. | `videoPath`, `subtitlesPath`, `outputPath`, `fontSize`, `fontColor`, `outlineColor`, `marginV` |
@@ -139,7 +139,8 @@ AI 에이전트에게 영상 처리를 직접 명령하면 잘못된 플래그, 
 
 ## 감사의 글 (Acknowledgements & Community)
 
-단순 포맷 변환을 넘어 스트림 멀티플렉싱(`mux_media`) 및 장면 전환 감지 기능(`detect_scenes`)을 제안해 주신 [@rajarshidattapy](https://github.com/rajarshidattapy) 님께 감사드립니다.
+- 단순 포맷 변환을 넘어 스트림 멀티플렉싱(`mux_media`) 및 장면 전환 감지 기능(`detect_scenes`)을 제안해 주신 [@rajarshidattapy](https://github.com/rajarshidattapy) 님께 감사드립니다.
+- 입력 스트림 속성이 다를 때 발생하는 파일 손상을 방지하도록 `concat_media`의 자동 감지(auto-probe) 모드를 제안해 주신 Reddit 사용자 [u/QuanTradin](https://www.reddit.com/user/QuanTradin/) 님께 감사드립니다.
 
 ---
 
