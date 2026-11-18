@@ -18,6 +18,26 @@ AI 에이전트에게 영상 처리를 직접 명령하면 잘못된 플래그, 
 
 ---
 
+## 빠른 시작 (Quick Start)
+
+별도의 빌드나 클론 없이 클라이언트 설정 파일에 바로 추가하여 실행할 수 있습니다:
+
+```json
+{
+  "mcpServers": {
+    "ffmpeg": {
+      "command": "npx",
+      "args": ["-y", "@ash_j1997/ffmpeg-mcp-server"]
+    }
+  }
+}
+```
+
+* **Claude Desktop:** `~/Library/Application Support/Claude/claude_desktop_config.json` (Mac) 또는 `%APPDATA%\Claude\claude_desktop_config.json` (Windows)
+* **Cursor / Windsurf:** stdio 서버로 등록 (Command: `npx`, Args: `["-y", "@ash_j1997/ffmpeg-mcp-server"]`)
+
+---
+
 ## 주요 기능 (Key Features)
 
 * **범용 하드웨어 가속:** macOS(VideoToolbox), Linux/Windows GPU(NVIDIA NVENC, Intel QuickSync, AMD AMF, VA-API)를 자동 감지하여 낮은 CPU 점유율로 5배~20배 빠른 인코딩을 지원합니다.

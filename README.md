@@ -18,6 +18,26 @@ This server provides **19 typed tools** using Zod schemas. The AI passes paramet
 
 ---
 
+## Quick Start
+
+Add directly to your client configuration (no manual cloning required):
+
+```json
+{
+  "mcpServers": {
+    "ffmpeg": {
+      "command": "npx",
+      "args": ["-y", "@ash_j1997/ffmpeg-mcp-server"]
+    }
+  }
+}
+```
+
+* **Claude Desktop:** `~/Library/Application Support/Claude/claude_desktop_config.json` (Mac) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows)
+* **Cursor / Windsurf:** Add as a stdio server with command `npx` and args `["-y", "@ash_j1997/ffmpeg-mcp-server"]`
+
+---
+
 ## Key Features
 
 * **Universal Hardware Acceleration:** Automatically detects and leverages hardware encoders across macOS (VideoToolbox), Linux/Windows GPUs (NVIDIA NVENC, Intel QuickSync, AMD AMF, and VA-API) for 5x–20x faster exports with low CPU usage.
