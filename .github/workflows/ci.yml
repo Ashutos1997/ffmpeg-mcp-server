@@ -20,9 +20,11 @@ jobs:
           cache: "npm"
 
       - name: Install FFmpeg & Libraries
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libass-dev
+          sudo apt-get install -y --no-install-recommends ffmpeg libass-dev
 
       - name: Install dependencies
         run: npm ci
