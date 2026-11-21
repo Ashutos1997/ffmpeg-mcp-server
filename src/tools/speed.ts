@@ -36,18 +36,20 @@ export async function changeSpeed(
   const output = await ensureOutputDir(outputPath);
 
   let expectedDuration: number | undefined;
+  let hasAudio = false;
   try {
     const probe = await probeMedia(input, { signal: options?.signal });
     if (probe.format.durationSeconds > 0) {
       expectedDuration = probe.format.durationSeconds / speed;
     }
+    hasAudio = probe.audioStreams.length > 0;
   } catch {}
 
   const hwInfo = await detectHwAccel();
   const videoFilter = `setpts=${(1 / speed).toFixed(6)}*PTS`;
   const args: string[] = ["-i", input, "-filter:v", videoFilter];
 
-  if (muteAudio) {
+  if (muteAudio || !hasAudio) {
     args.push("-an");
   } else {
     const audioFilter = getAtempoFilter(speed);

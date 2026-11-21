@@ -21,6 +21,13 @@ export const extractThumbnailSchema = z.object({
 
 export type ExtractThumbnailParams = z.infer<typeof extractThumbnailSchema>;
 
+function parseTimestampToSeconds(ts: string): number {
+  const parts = ts.split(":").map(Number);
+  if (parts.length === 1) return parts[0];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return parts[0] * 3600 + parts[1] * 60 + parts[2];
+}
+
 export async function extractThumbnail(
   params: ExtractThumbnailParams,
   options?: { signal?: AbortSignal }
@@ -35,15 +42,21 @@ export async function extractThumbnail(
   const input = await ensureFileExists(params.inputPath);
   const output = await ensureOutputDir(params.outputPath);
 
+  const probe = await probeMedia(input, { signal: options?.signal });
+  if (probe.videoStreams.length === 0) {
+    throw new Error(`Cannot extract thumbnail from "${params.inputPath}": file contains no video streams.`);
+  }
+
   let timestamp = params.timestamp || "00:00:01";
+  const duration = probe.format.durationSeconds;
 
   if (timestamp === "midpoint") {
-    try {
-      const info = await probeMedia(input, { signal: options?.signal });
-      const midpointSeconds = Math.max(0, Math.floor(info.format.durationSeconds / 2));
-      timestamp = String(midpointSeconds);
-    } catch {
-      timestamp = "00:00:01";
+    const midpointSeconds = Math.max(0, Math.floor(duration / 2));
+    timestamp = String(midpointSeconds);
+  } else if (duration > 0) {
+    const tsSec = parseTimestampToSeconds(timestamp);
+    if (!isNaN(tsSec) && tsSec >= duration) {
+      timestamp = String(Math.max(0, Number((duration - 0.1).toFixed(2))));
     }
   }
 

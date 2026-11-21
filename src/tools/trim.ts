@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ensureFileExists, ensureOutputDir, runFfmpeg, FfmpegProgress } from "../utils/exec.js";
 import { detectHwAccel } from "../utils/hwaccel.js";
+import { probeMedia } from "./probe.js";
 
 export const trimMediaSchema = z.object({
   inputPath: z.string().describe("Path to the source media file to cut."),
@@ -45,20 +46,41 @@ export async function trimMedia(
   const input = await ensureFileExists(params.inputPath);
   const output = await ensureOutputDir(params.outputPath);
 
+  const probe = await probeMedia(input, { signal: options?.signal });
+  const fileDuration = probe.format.durationSeconds;
+  const startSec = timestampToSeconds(params.startTime);
+
+  if (fileDuration > 0 && startSec >= fileDuration) {
+    throw new Error(
+      `startTime (${params.startTime} / ${startSec}s) is greater than or equal to file duration (${fileDuration.toFixed(2)}s).`
+    );
+  }
+
+  let durationToCut: number | undefined;
+
+  if (params.endTime) {
+    const endSec = timestampToSeconds(params.endTime);
+    if (endSec <= startSec) {
+      throw new Error(`endTime (${params.endTime}) must be later than startTime (${params.startTime}).`);
+    }
+    const effectiveEndSec = fileDuration > 0 ? Math.min(endSec, fileDuration) : endSec;
+    durationToCut = Math.max(0.001, effectiveEndSec - startSec);
+  } else if (params.duration) {
+    const reqDuration = Number(params.duration);
+    if (reqDuration <= 0) {
+      throw new Error("duration must be a positive number of seconds");
+    }
+    durationToCut = fileDuration > 0 ? Math.min(reqDuration, Math.max(0.001, fileDuration - startSec)) : reqDuration;
+  }
+
   const args: string[] = ["-y"];
 
   // Fast seek before -i
   args.push("-ss", params.startTime);
   args.push("-i", input);
 
-  if (params.endTime) {
-    const duration = timestampToSeconds(params.endTime) - timestampToSeconds(params.startTime);
-    if (duration <= 0) {
-      throw new Error("endTime must be later than startTime");
-    }
-    args.push("-t", String(duration));
-  } else if (params.duration) {
-    args.push("-t", params.duration);
+  if (durationToCut !== undefined) {
+    args.push("-t", String(durationToCut));
   }
 
   if (params.accurateReencode) {
@@ -78,6 +100,7 @@ export async function trimMedia(
   const res = await runFfmpeg(args, {
     signal: options?.signal,
     onProgress: options?.onProgress,
+    expectedDurationSeconds: durationToCut,
   });
 
   return {

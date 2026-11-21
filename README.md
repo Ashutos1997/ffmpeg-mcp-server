@@ -47,6 +47,7 @@ Add directly to your client configuration (no manual cloning required):
 * **Social Formats & Automation:** Reformats landscape video to 9:16 vertical video with blurred backgrounds, burns customizable hardcoded subtitles, and stacks top/bottom split-screen reels for TikTok and Instagram Reels.
 * **Audio Engineering:** Normalizes loudness to broadcast/streaming standards (EBU R128 / -16 LUFS), cleans vocal audio with 80Hz rumble removal, and trims dead air while preserving lip-sync.
 * **Scene Intelligence & Multiplexing:** Detects visual scene changes and cut points for smart editing workflows, and combines or replaces video/audio tracks with zero-loss stream copy.
+* **Smart Input Guards & Validation:** Pre-probes streams and duration limits before execution — safeguarding `trim_media`, `extract_audio`, `generate_waveform`, and `extract_thumbnail` from cryptic errors on silent or out-of-bounds media.
 
 ---
 
@@ -140,7 +141,7 @@ Run directly with `npx` (no manual cloning or building required):
 ## Acknowledgements & Community
 
 - Special thanks to [@rajarshidattapy](https://github.com/rajarshidattapy) for suggesting stream multiplexing (`mux_media`) and scene transition detection (`detect_scenes`) to expand the server beyond format conversion.
-- Special thanks to Reddit user [u/QuanTradin](https://www.reddit.com/user/QuanTradin/) for suggesting smart auto-probing in `concat_media` to prevent corrupted outputs when input stream parameters differ.
+- Special thanks to Reddit user [u/QuanTradin](https://www.reddit.com/user/QuanTradin/) for inspiring smart input guards (pre-flight stream validation & sample rate checking) and auto-probing in `concat_media` to prevent corrupted outputs and catch bugs before execution.
 
 ---
 

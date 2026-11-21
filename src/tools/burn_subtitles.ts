@@ -101,7 +101,13 @@ export async function burnSubtitles(
     args.push("-crf", "22", "-preset", "fast", "-pix_fmt", "yuv420p");
   }
 
-  args.push("-c:a", "copy", "-movflags", "+faststart", "-y", output);
+  const hasAudio = probe.audioStreams.length > 0;
+  if (hasAudio) {
+    args.push("-c:a", "copy");
+  } else {
+    args.push("-an");
+  }
+  args.push("-movflags", "+faststart", "-y", output);
 
   const res = await runFfmpeg(args, {
     signal: options?.signal,

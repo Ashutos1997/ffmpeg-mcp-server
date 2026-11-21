@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ensureFileExists, ensureOutputDir, runFfmpeg, FfmpegProgress } from "../utils/exec.js";
+import { probeMedia } from "./probe.js";
 
 export const extractAudioSchema = z.object({
   inputPath: z.string().describe("Path to the source video or audio file."),
@@ -24,6 +25,11 @@ export async function extractAudio(
 }> {
   const input = await ensureFileExists(params.inputPath);
   const output = await ensureOutputDir(params.outputPath);
+
+  const probe = await probeMedia(input, { signal: options?.signal });
+  if (probe.audioStreams.length === 0) {
+    throw new Error(`Cannot extract audio from "${params.inputPath}": file contains no audio streams.`);
+  }
 
   const format = params.format || "mp3";
   const args: string[] = ["-y", "-i", input, "-vn"]; // -vn drops the video track
@@ -56,6 +62,7 @@ export async function extractAudio(
   const res = await runFfmpeg(args, {
     signal: options?.signal,
     onProgress: options?.onProgress,
+    expectedDurationSeconds: probe.format.durationSeconds,
   });
 
   return {

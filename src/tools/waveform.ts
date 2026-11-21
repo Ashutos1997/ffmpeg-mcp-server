@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { z } from "zod";
 import { runFfmpeg, ensureFileExists, ensureOutputDir } from "../utils/exec.js";
+import { probeMedia } from "./probe.js";
 
 export const generateWaveformSchema = z.object({
   inputPath: z.string().describe("Path to the audio or video file."),
@@ -26,6 +27,11 @@ export async function generateWaveform(
   const { inputPath, outputPath, width = 1200, height = 280, color = "0x6366f1", scale = "lin", includeBase64 = true } = params;
   const input = await ensureFileExists(inputPath);
   const output = await ensureOutputDir(outputPath);
+
+  const probe = await probeMedia(input, { signal: options?.signal });
+  if (probe.audioStreams.length === 0) {
+    throw new Error(`Cannot generate waveform: input file '${inputPath}' contains no audio streams.`);
+  }
 
   const filter = `aformat=channel_layouts=mono,showwavespic=s=${width}x${height}:colors=${color}:scale=${scale}`;
 

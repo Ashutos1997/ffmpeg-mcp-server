@@ -47,6 +47,7 @@ AI 에이전트에게 영상 처리를 직접 명령하면 잘못된 플래그, 
 * **숏폼/소셜 포맷 자동화:** 가로 영상을 배경 블러 처리된 9:16 세로 숏폼 영상으로 변환하고, 스타일이 적용된 자막을 하드코딩(버닝)하며, 틱톡/릴스용 상하 분할 스플릿 스크린 영상을 제작합니다.
 * **오디오 엔지니어링:** 스트리밍/방송 표준(EBU R128 / -16 LUFS)에 맞춰 음량을 정규화하고, 80Hz 럼블 제거 필터로 음성을 선명하게 보정하며, 립싱크를 유지하면서 무음 구간을 자동으로 잘라냅니다.
 * **장면 감지 및 스트림 결합:** 시각적 장면 전환(컷 편집 지점)을 감지하여 타임스탬프와 콘택트 시트를 반환하고, 무손실 스트림 복사로 비디오와 오디오를 즉시 결합/교체합니다.
+* **지능형 사전 검증(Smart Input Guards):** FFmpeg 실행 전 미디어 스트림 유무, 오디오 트랙, 재생 시간 한계를 사전에 검증하여 `trim_media`, `extract_audio`, `generate_waveform`, `extract_thumbnail` 등에서 무음 영상이나 범위 초과로 인한 런타임 오류를 사전에 방지합니다.
 
 ---
 
@@ -140,7 +141,7 @@ AI 에이전트에게 영상 처리를 직접 명령하면 잘못된 플래그, 
 ## 감사의 글 (Acknowledgements & Community)
 
 - 단순 포맷 변환을 넘어 스트림 멀티플렉싱(`mux_media`) 및 장면 전환 감지 기능(`detect_scenes`)을 제안해 주신 [@rajarshidattapy](https://github.com/rajarshidattapy) 님께 감사드립니다.
-- 입력 스트림 속성이 다를 때 발생하는 파일 손상을 방지하도록 `concat_media`의 자동 감지(auto-probe) 모드를 제안해 주신 Reddit 사용자 [u/QuanTradin](https://www.reddit.com/user/QuanTradin/) 님께 감사드립니다.
+- 사전 스트림 검증 및 오디오 샘플 레이트 체크(Smart Input Guards) 아이디어와 `concat_media`의 자동 감지(auto-probe) 모드를 제안해 주신 Reddit 사용자 [u/QuanTradin](https://www.reddit.com/user/QuanTradin/) 님께 감사드립니다.
 
 ---
 

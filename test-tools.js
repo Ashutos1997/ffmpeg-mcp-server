@@ -57,6 +57,10 @@ const testFiles = [
   "./test_overlayed.mp4",
   "./test_muxed.mp4",
   "./test_scenes_sheet.png",
+  "./test_silent.mp4",
+  "./test_trimmed_clamped.mp4",
+  "./test_thumb_clamped.png",
+  "./test_speed_silent.mp4",
 ];
 
 function cleanup() {
@@ -91,6 +95,14 @@ async function runTests() {
     "-c:v", "libx264", "-c:a", "aac",
     "-pix_fmt", "yuv420p",
     "-y", "./test_input2.mp4"
+  ]);
+
+  // Create silent video clip for input guard verification
+  await execAsync("ffmpeg", [
+    "-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=15",
+    "-c:v", "libx264",
+    "-pix_fmt", "yuv420p",
+    "-y", "./test_silent.mp4"
   ]);
 
   // Create test logo image for watermark overlay
@@ -155,6 +167,36 @@ async function runTests() {
     `Expected a 1s trim, got ${trimmedProbe.format.durationSeconds}s`
   );
 
+  // Test Smart Input Guards in trim_media
+  await assert.rejects(
+    trimMedia({
+      inputPath: "./test_input.mp4",
+      outputPath: "./test_trimmed_clamped.mp4",
+      startTime: "10",
+      duration: "1",
+    }),
+    /startTime .* is greater than or equal to file duration/
+  );
+
+  await assert.rejects(
+    trimMedia({
+      inputPath: "./test_input.mp4",
+      outputPath: "./test_trimmed_clamped.mp4",
+      startTime: "2",
+      endTime: "1",
+    }),
+    /endTime .* must be later than startTime/
+  );
+
+  const trimClamped = await trimMedia({
+    inputPath: "./test_input.mp4",
+    outputPath: "./test_trimmed_clamped.mp4",
+    startTime: "1",
+    duration: "10",
+  });
+  assert.ok(trimClamped.outputPath);
+  console.log("✓ Smart Guard: Trim correctly rejects out-of-bounds start times and clamps overrun durations");
+
   console.log("\n=== Testing 5: extract_audio (Whisper 16kHz WAV) ===");
   const audio = await extractAudio({
     inputPath: "./test_input.mp4",
@@ -163,6 +205,16 @@ async function runTests() {
   });
   console.log("✓ Audio:", audio.outputPath, "Format:", audio.format);
 
+  // Test Smart Input Guard: Reject silent inputs with no audio tracks
+  await assert.rejects(
+    extractAudio({
+      inputPath: "./test_silent.mp4",
+      outputPath: "./test_audio.wav",
+    }),
+    /contains no audio streams/
+  );
+  console.log("✓ Smart Guard: extract_audio rejects inputs with no audio streams");
+
   console.log("\n=== Testing 6: extract_thumbnail (Multimodal Base64) ===");
   const thumb = await extractThumbnail({
     inputPath: "./test_input.mp4",
@@ -170,6 +222,23 @@ async function runTests() {
     timestamp: "midpoint",
   });
   console.log("✓ Thumbnail:", thumb.outputPath, "Base64 Length:", thumb.base64 ? thumb.base64.length : "none");
+
+  // Test Smart Input Guard: Clamps timestamp past EOF and rejects audio-only files
+  const thumbPastEof = await extractThumbnail({
+    inputPath: "./test_input.mp4",
+    outputPath: "./test_thumb_clamped.png",
+    timestamp: "100",
+  });
+  assert.ok(thumbPastEof.outputPath);
+
+  await assert.rejects(
+    extractThumbnail({
+      inputPath: "./test_audio.wav",
+      outputPath: "./test_thumb_clamped.png",
+    }),
+    /contains no video streams/
+  );
+  console.log("✓ Smart Guard: extract_thumbnail clamps past-EOF timestamps and rejects video-less files");
 
   console.log("\n=== Testing 7: compress_video (Target Size / Hardware Accel) ===");
   const comp = await compressMedia({
@@ -235,6 +304,16 @@ async function runTests() {
   });
   console.log("✓ Waveform:", wave.outputPath, wave.resolution, "Base64 Length:", wave.base64 ? wave.base64.length : "none");
 
+  // Test Smart Input Guard: Reject silent inputs with no audio tracks
+  await assert.rejects(
+    generateWaveform({
+      inputPath: "./test_silent.mp4",
+      outputPath: "./test_waveform.png",
+    }),
+    /contains no audio streams/
+  );
+  console.log("✓ Smart Guard: generate_waveform rejects inputs with no audio streams");
+
   console.log("\n=== Testing 10: add_subtitles (Soft Track) ===");
   const sub = await addSubtitles({
     videoPath: "./test_input.mp4",
@@ -284,6 +363,15 @@ async function runTests() {
     speed: 2.0,
   });
   console.log("✓ Speed adjusted:", speed.outputPath, `${speed.speedMultiplier}x`);
+
+  // Test Smart Input Guard: Silent video with muteAudio=false succeeds without crashing on missing audio track
+  const silentSpeed = await changeSpeed({
+    inputPath: "./test_silent.mp4",
+    outputPath: "./test_speed_silent.mp4",
+    speed: 2.0,
+  });
+  assert.ok(silentSpeed.outputPath);
+  console.log("✓ Smart Guard: change_speed cleanly handles silent videos without failing on audio filters");
 
   console.log("\n=== Testing 12: reformat_aspect_ratio (9:16 Blurred Reel) ===");
   const reformat = await reformatAspectRatio({
