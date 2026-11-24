@@ -27,7 +27,7 @@ import { FfmpegProgress, runCommand } from "./utils/exec.js";
 
 const server = new McpServer({
   name: "ffmpeg-mcp-server",
-  version: "0.6.3",
+  version: "0.6.4",
 });
 
 function createProgressCallback(extra: any) {
