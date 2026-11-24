@@ -36,7 +36,7 @@ if (process.argv.includes("setup") || process.argv[2] === "setup") {
 
 const server = new McpServer({
   name: "ffmpeg-mcp-server",
-  version: "0.7.0",
+  version: "0.7.1",
 });
 
 function createProgressCallback(extra: any) {

@@ -12,7 +12,7 @@ export async function runSetupCli(): Promise<void> {
   console.log(`
 ╔═══════════════════════════════════════════════════════════════╗
 ║   🎬 FFmpeg MCP Server - Automatic Client Setup Wizard        ║
-║   v0.7.0 • https://github.com/Ashutos1997/ffmpeg-mcp-server   ║
+║   v0.7.1 • https://github.com/Ashutos1997/ffmpeg-mcp-server   ║
 ╚═══════════════════════════════════════════════════════════════╝
 `);
 
