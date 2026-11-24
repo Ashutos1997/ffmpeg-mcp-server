@@ -22,6 +22,7 @@ import { normalizeAudio } from "./dist/tools/normalize.js";
 import { addOverlay } from "./dist/tools/overlay.js";
 import { muxMedia } from "./dist/tools/mux.js";
 import { detectScenes } from "./dist/tools/detect_scenes.js";
+import { runFfmpegDoctor } from "./dist/tools/doctor.js";
 import { detectHwAccel } from "./dist/utils/hwaccel.js";
 
 const execAsync = promisify(execFile);
@@ -135,6 +136,22 @@ async function runTests() {
     }
   );
   console.log("✓ Converted:", conv.outputPath, "HwAccel:", conv.hardwareAccelerated, "Progress Events:", progressUpdates);
+  assert.ok(conv.verified, "conv.verified should exist");
+  assert.equal(conv.verified.verified, true);
+  assert.ok(conv.verified.fileSizeBytes > 0);
+  console.log("✓ Post-Flight Verified:", conv.verified.fileSizeFormatted, conv.verified.formatName);
+
+  // Test Plan-Before-Encode (dryRun)
+  const dryConv = await convertMedia({
+    inputPath: "./test_input.mp4",
+    outputPath: "./test_dry_nonexistent.mp4",
+    preset: "instagram_reel",
+    dryRun: true,
+  });
+  assert.equal(dryConv.dryRun, true);
+  assert.ok(dryConv.commandExecuted.includes("ffmpeg"));
+  assert.ok(!fs.existsSync("./test_dry_nonexistent.mp4"), "Dry run should not create file");
+  console.log("✓ Plan-Before-Encode (dryRun): Planned command previewed without file creation");
 
   console.log("\n=== Testing 3: media_convert (GIF) ===");
   const gif = await convertMedia({
@@ -153,6 +170,20 @@ async function runTests() {
     duration: "1",
   });
   console.log("✓ Trimmed:", trim.outputPath);
+  assert.ok(trim.verified, "trim.verified should exist");
+  assert.equal(trim.verified.verified, true);
+
+  // Test Plan-Before-Encode (dryRun) on trim
+  const dryTrim = await trimMedia({
+    inputPath: "./test_input.mp4",
+    outputPath: "./test_dry_trim.mp4",
+    startTime: "0",
+    duration: "1",
+    dryRun: true,
+  });
+  assert.equal(dryTrim.dryRun, true);
+  assert.ok(!fs.existsSync("./test_dry_trim.mp4"), "Dry run should not create file");
+  console.log("✓ Plan-Before-Encode (dryRun) on trim verified");
 
   const trimWithEndTime = await trimMedia({
     inputPath: "./test_input.mp4",
@@ -501,7 +532,16 @@ async function runTests() {
     }
   }
 
-  console.log("\n🎉 ALL 21 TEST SUITES (19 TOOLS + HW ACCEL + PROGRESS + CANCELLATION) PASSED FLAWLESSLY!");
+  console.log("\n=== Testing 22 (NEW): ffmpeg_doctor (System & Filter Diagnostics) ===");
+  const doctor = await runFfmpegDoctor();
+  assert.equal(doctor.healthy, true, "Doctor report should be healthy");
+  assert.equal(doctor.binaries.ffmpeg.found, true, "FFmpeg binary should be found");
+  assert.equal(doctor.binaries.ffprobe.found, true, "FFprobe binary should be found");
+  assert.ok(typeof doctor.hardwareAcceleration.available === "boolean");
+  assert.ok(doctor.codecs.h264, "H.264 codec should be available");
+  console.log("✓ Doctor Report: FFmpeg", doctor.binaries.ffmpeg.version, "| HwAccel:", doctor.hardwareAcceleration.activeType, "| Recommendations:", doctor.recommendations.length);
+
+  console.log("\n🎉 ALL 22 TEST SUITES (20 TOOLS + HW ACCEL + VERIFICATION + DRY RUN + CANCELLATION) PASSED FLAWLESSLY!");
   cleanup();
 }
 

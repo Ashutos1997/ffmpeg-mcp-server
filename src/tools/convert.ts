@@ -1,15 +1,16 @@
 import { z } from "zod";
 import { ensureFileExists, ensureOutputDir, runFfmpeg, FfmpegProgress } from "../utils/exec.js";
 import { detectHwAccel } from "../utils/hwaccel.js";
+import { verifyMediaOutput, VerifiedMediaOutput } from "../utils/verification.js";
 import { probeMedia } from "./probe.js";
 
 export const convertMediaSchema = z.object({
   inputPath: z.string().describe("Path to the source media file to convert"),
   outputPath: z.string().describe("Destination path for the converted file (e.g. ./output.mp4, ./output.webm, ./animation.gif)"),
   preset: z
-    .enum(["web_mp4", "webm", "gif", "auto"])
+    .enum(["web_mp4", "webm", "gif", "instagram_reel", "youtube_shorts", "auto"])
     .optional()
-    .describe("Encoding preset: 'web_mp4' for browser playback, 'webm' for WebM video, 'gif' for animated GIF, or 'auto'. Default: 'auto'."),
+    .describe("Encoding preset: 'web_mp4' for browser playback, 'webm' for WebM video, 'gif' for animated GIF, 'instagram_reel' (9:16 vertical 30fps), 'youtube_shorts' (9:16 vertical 60fps), or 'auto'. Default: 'auto'."),
   crf: z
     .number()
     .min(0)
@@ -30,20 +31,28 @@ export const convertMediaSchema = z.object({
     .boolean()
     .optional()
     .describe("Use hardware-accelerated video encoding (VideoToolbox, NVENC, QSV, etc.) when available. Default: true."),
+  dryRun: z
+    .boolean()
+    .optional()
+    .describe("Plan-before-encode: returns planned FFmpeg command, parameters, and target output without writing files."),
 });
 
 export type ConvertMediaParams = z.infer<typeof convertMediaSchema>;
 
-export async function convertMedia(
-  params: ConvertMediaParams,
-  options?: { signal?: AbortSignal; onProgress?: (p: FfmpegProgress) => void }
-): Promise<{
+export interface ConvertMediaResult {
   outputPath: string;
   commandExecuted: string;
   hardwareAccelerated: boolean;
   encoderUsed: string;
   durationSeconds: number;
-}> {
+  dryRun?: boolean;
+  verified?: VerifiedMediaOutput;
+}
+
+export async function convertMedia(
+  params: ConvertMediaParams,
+  options?: { signal?: AbortSignal; onProgress?: (p: FfmpegProgress) => void }
+): Promise<ConvertMediaResult> {
   const input = await ensureFileExists(params.inputPath);
   const output = await ensureOutputDir(params.outputPath);
 
@@ -70,6 +79,30 @@ export async function convertMedia(
     const filter = `${fps}${scale},split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse`;
 
     args.push("-vf", filter);
+  } else if (preset === "instagram_reel") {
+    if (useHw && hwInfo.isAvailable) {
+      encoderUsed = hwInfo.h264Encoder;
+      args.push("-c:v", hwInfo.h264Encoder, "-b:v", "4M");
+      isHwUsed = true;
+    } else {
+      encoderUsed = "libx264";
+      args.push("-c:v", "libx264", "-crf", String(params.crf ?? 22), "-preset", "medium");
+    }
+    const filter = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black";
+    args.push("-vf", filter, "-r", String(params.fps ?? 30));
+    args.push("-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart");
+  } else if (preset === "youtube_shorts") {
+    if (useHw && hwInfo.isAvailable) {
+      encoderUsed = hwInfo.h264Encoder;
+      args.push("-c:v", hwInfo.h264Encoder, "-b:v", "6M");
+      isHwUsed = true;
+    } else {
+      encoderUsed = "libx264";
+      args.push("-c:v", "libx264", "-crf", String(params.crf ?? 21), "-preset", "medium");
+    }
+    const filter = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black";
+    args.push("-vf", filter, "-r", String(params.fps ?? 60));
+    args.push("-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart");
   } else if (preset === "web_mp4" || (preset === "auto" && output.toLowerCase().endsWith(".mp4"))) {
     if (useHw && hwInfo.isAvailable) {
       encoderUsed = hwInfo.h264Encoder;
@@ -106,11 +139,24 @@ export async function convertMedia(
 
   args.push("-y", output);
 
+  if (params.dryRun) {
+    return {
+      outputPath: output,
+      commandExecuted: `ffmpeg ${args.join(" ")}`,
+      hardwareAccelerated: isHwUsed,
+      encoderUsed,
+      durationSeconds: 0,
+      dryRun: true,
+    };
+  }
+
   const res = await runFfmpeg(args, {
     signal: options?.signal,
     onProgress: options?.onProgress,
     expectedDurationSeconds: inputDuration,
   });
+
+  const verified = await verifyMediaOutput(output, { signal: options?.signal });
 
   return {
     outputPath: output,
@@ -118,5 +164,6 @@ export async function convertMedia(
     hardwareAccelerated: isHwUsed,
     encoderUsed,
     durationSeconds: res.durationSeconds,
+    verified,
   };
 }

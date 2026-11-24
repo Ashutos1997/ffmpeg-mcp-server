@@ -4,6 +4,7 @@ import os from "node:os";
 import { z } from "zod";
 import { runFfmpeg, ensureFileExists, ensureOutputDir, FfmpegProgress } from "../utils/exec.js";
 import { detectHwAccel } from "../utils/hwaccel.js";
+import { verifyMediaOutput, VerifiedMediaOutput } from "../utils/verification.js";
 import { probeMedia, ProbeSummary } from "./probe.js";
 
 export const concatMediaSchema = z.object({
@@ -16,9 +17,25 @@ export const concatMediaSchema = z.object({
     .describe(
       "Concatenation mode. 'auto' (default) probes inputs to check codecs, resolutions, framerates, and audio sample rates, using fast stream copy if matching or falling back to re-encoding if they differ. 'lossless' forces stream copy. 'reencode' forces filtergraph normalization."
     ),
+  dryRun: z
+    .boolean()
+    .optional()
+    .describe("Plan-before-encode: returns planned FFmpeg command, parameters, and target output without writing files."),
 });
 
 export type ConcatMediaParams = z.infer<typeof concatMediaSchema>;
+
+export interface ConcatMediaResult {
+  success: boolean;
+  outputPath: string;
+  totalInputs: number;
+  mode: string;
+  strategyUsed: string;
+  commandExecuted: string;
+  durationSeconds: number;
+  dryRun?: boolean;
+  verified?: VerifiedMediaOutput;
+}
 
 function canUseLosslessConcat(probes: ProbeSummary[]): boolean {
   if (probes.length < 2) return true;
@@ -62,8 +79,8 @@ function canUseLosslessConcat(probes: ProbeSummary[]): boolean {
 export async function concatMedia(
   params: ConcatMediaParams,
   options?: { signal?: AbortSignal; onProgress?: (p: FfmpegProgress) => void }
-) {
-  const { inputPaths, outputPath, mode = "auto" } = params;
+): Promise<ConcatMediaResult> {
+  const { inputPaths, outputPath, mode = "auto", dryRun } = params;
 
   const resolvedInputs: string[] = [];
   for (const p of inputPaths) {
@@ -101,80 +118,75 @@ export async function concatMedia(
       args.push("-i", input);
     }
 
-    const filters: string[] = [];
-    const concatInputs: string[] = [];
-    const hasAnyAudio = probes.some((probe) => probe.audioStreams.length > 0);
-
+    let filterComplex = "";
     if (allVideo) {
-      const firstVideo = probes[0].videoStreams[0];
-      const width = Math.max(2, Math.floor(firstVideo.width / 2) * 2);
-      const height = Math.max(2, Math.floor(firstVideo.height / 2) * 2);
+      const targetWidth = probes[0].videoStreams[0].width;
+      const targetHeight = probes[0].videoStreams[0].height;
+      const targetFps = probes[0].videoStreams[0].fps || 30;
 
-      probes.forEach((probe, index) => {
-        filters.push(
-          `[${index}:v:0]scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
-          `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p,setpts=PTS-STARTPTS[v${index}]`
-        );
-        concatInputs.push(`[v${index}]`);
-
-        if (hasAnyAudio) {
-          if (probe.audioStreams.length > 0) {
-            filters.push(
-              `[${index}:a:0]aformat=sample_rates=48000:channel_layouts=stereo,` +
-              `aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[a${index}]`
-            );
-          } else {
-            const duration = Math.max(0.001, probe.format.durationSeconds);
-            filters.push(
-              `anullsrc=channel_layout=stereo:sample_rate=48000,atrim=duration=${duration},` +
-              `asetpts=PTS-STARTPTS[a${index}]`
-            );
-          }
-          concatInputs.push(`[a${index}]`);
+      for (let i = 0; i < resolvedInputs.length; i++) {
+        const hasAudio = probes[i].audioStreams.length > 0;
+        filterComplex += `[${i}:v]scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=decrease,pad=${targetWidth}:${targetHeight}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${targetFps}[v${i}];`;
+        if (hasAudio) {
+          filterComplex += `[${i}:a]aformat=sample_rates=48000:channel_layouts=stereo[a${i}];`;
+        } else {
+          filterComplex += `anullsrc=r=48000:cl=stereo,atrim=duration=${probes[i].format.durationSeconds}[a${i}];`;
         }
-      });
+      }
 
-      filters.push(
-        `${concatInputs.join("")}concat=n=${resolvedInputs.length}:v=1:a=${hasAnyAudio ? 1 : 0}` +
-        `[outv]${hasAnyAudio ? "[outa]" : ""}`
-      );
-      args.push("-filter_complex", filters.join(";"), "-map", "[outv]");
-      if (hasAnyAudio) args.push("-map", "[outa]");
+      for (let i = 0; i < resolvedInputs.length; i++) {
+        filterComplex += `[v${i}][a${i}]`;
+      }
+      filterComplex += `concat=n=${resolvedInputs.length}:v=1:a=1[outv][outa]`;
+
+      args.push("-filter_complex", filterComplex, "-map", "[outv]", "-map", "[outa]");
 
       const hwInfo = await detectHwAccel();
       if (hwInfo.isAvailable) {
-        args.push("-c:v", hwInfo.h264Encoder, "-b:v", "4M");
+        args.push("-c:v", hwInfo.h264Encoder, "-b:v", "4M", "-c:a", "aac", "-b:a", "192k");
       } else {
-        args.push("-c:v", "libx264", "-crf", "22", "-preset", "fast");
+        args.push("-c:v", "libx264", "-crf", "22", "-preset", "fast", "-c:a", "aac", "-b:a", "192k");
       }
-      args.push("-pix_fmt", "yuv420p");
-      if (hasAnyAudio) args.push("-c:a", "aac", "-b:a", "192k");
     } else {
-      probes.forEach((_probe, index) => {
-        filters.push(
-          `[${index}:a:0]aformat=sample_rates=48000:channel_layouts=stereo,` +
-          `aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[a${index}]`
-        );
-        concatInputs.push(`[a${index}]`);
-      });
-      filters.push(`${concatInputs.join("")}concat=n=${resolvedInputs.length}:v=0:a=1[outa]`);
-      args.push(
-        "-filter_complex", filters.join(";"),
-        "-map", "[outa]",
-        "-c:a", "aac",
-        "-b:a", "192k"
-      );
+      for (let i = 0; i < resolvedInputs.length; i++) {
+        filterComplex += `[${i}:a]aformat=sample_rates=48000:channel_layouts=stereo[a${i}];`;
+      }
+      for (let i = 0; i < resolvedInputs.length; i++) {
+        filterComplex += `[a${i}]`;
+      }
+      filterComplex += `concat=n=${resolvedInputs.length}:v=0:a=1[outa]`;
+
+      args.push("-filter_complex", filterComplex, "-map", "[outa]");
+      args.push("-c:a", "aac", "-b:a", "192k");
     }
 
-    args.push("-movflags", "+faststart", "-y", output);
+    args.push("-y", output);
+
+    const totalEstDuration = probes.reduce(
+      (total, probe) => total + probe.format.durationSeconds,
+      0
+    );
+
+    if (dryRun) {
+      return {
+        success: true,
+        outputPath: output,
+        totalInputs: resolvedInputs.length,
+        mode: effectiveMode,
+        strategyUsed: effectiveMode,
+        commandExecuted: `ffmpeg ${args.join(" ")}`,
+        durationSeconds: totalEstDuration,
+        dryRun: true,
+      };
+    }
+
     const result = await runFfmpeg(args, {
       signal: options?.signal,
       onProgress: options?.onProgress,
-      expectedDurationSeconds: probes.reduce(
-        (total, probe) => total + probe.format.durationSeconds,
-        0
-      ),
+      expectedDurationSeconds: totalEstDuration,
     });
+
+    const verified = await verifyMediaOutput(output, { signal: options?.signal });
 
     return {
       success: true,
@@ -184,6 +196,7 @@ export async function concatMedia(
       strategyUsed: effectiveMode,
       commandExecuted: result.command,
       durationSeconds: result.durationSeconds,
+      verified,
     };
   }
 
@@ -192,19 +205,31 @@ export async function concatMedia(
     .map((p) => `file '${p.replace(/'/g, "'\\''")}'`)
     .join("\n");
 
+  if (dryRun) {
+    return {
+      success: true,
+      outputPath: output,
+      totalInputs: resolvedInputs.length,
+      mode: effectiveMode,
+      strategyUsed: "lossless (demuxer concat)",
+      commandExecuted: `ffmpeg -f concat -safe 0 -i <manifest: ${resolvedInputs.length} files> -c copy -y ${output}`,
+      durationSeconds: 0,
+      dryRun: true,
+    };
+  }
+
   fs.writeFileSync(tmpManifest, manifestContent, "utf8");
 
   try {
     const args: string[] = ["-f", "concat", "-safe", "0", "-i", tmpManifest];
-
-    args.push("-c", "copy");
-
-    args.push("-y", output);
+    args.push("-c", "copy", "-y", output);
 
     const result = await runFfmpeg(args, {
       signal: options?.signal,
       onProgress: options?.onProgress,
     });
+
+    const verified = await verifyMediaOutput(output, { signal: options?.signal });
 
     return {
       success: true,
@@ -214,6 +239,7 @@ export async function concatMedia(
       strategyUsed: effectiveMode,
       commandExecuted: result.command,
       durationSeconds: result.durationSeconds,
+      verified,
     };
   } finally {
     if (fs.existsSync(tmpManifest)) {

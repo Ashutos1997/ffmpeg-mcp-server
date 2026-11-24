@@ -4,6 +4,7 @@ import path from "node:path";
 import { z } from "zod";
 import { runFfmpeg, ensureFileExists, ensureOutputDir, FfmpegProgress } from "../utils/exec.js";
 import { detectHwAccel } from "../utils/hwaccel.js";
+import { verifyMediaOutput, VerifiedMediaOutput } from "../utils/verification.js";
 import { probeMedia } from "./probe.js";
 
 export const compressMediaSchema = z.object({
@@ -14,15 +15,30 @@ export const compressMediaSchema = z.object({
   crf: z.number().int().min(18).max(45).optional().describe("Quality value between 18 (higher quality) and 45 (smaller file). Overrides preset."),
   maxWidth: z.number().int().positive().optional().describe("Maximum video width in pixels, such as 1280 for 720p. Keeps aspect ratio."),
   hardwareAcceleration: z.boolean().optional().describe("Use hardware-accelerated video encoding (VideoToolbox, NVENC, QSV, etc.) when available. Default: true."),
+  dryRun: z.boolean().optional().describe("Plan-before-encode: returns planned FFmpeg command, parameters, and target output without writing files."),
 });
 
 export type CompressMediaParams = z.infer<typeof compressMediaSchema>;
 
+export interface CompressMediaResult {
+  success: boolean;
+  outputPath: string;
+  originalSizeBytes: number;
+  compressedSizeBytes: number;
+  compressionRatio: string;
+  hardwareAccelerated: boolean;
+  encoderUsed: string;
+  commandExecuted: string;
+  durationSeconds: number;
+  dryRun?: boolean;
+  verified?: VerifiedMediaOutput;
+}
+
 export async function compressMedia(
   params: CompressMediaParams,
   options?: { signal?: AbortSignal; onProgress?: (p: FfmpegProgress) => void }
-) {
-  const { inputPath, outputPath, targetSizeMB, preset = "balanced", crf, maxWidth, hardwareAcceleration } = params;
+): Promise<CompressMediaResult> {
+  const { inputPath, outputPath, targetSizeMB, preset = "balanced", crf, maxWidth, hardwareAcceleration, dryRun } = params;
   const input = await ensureFileExists(inputPath);
   const output = await ensureOutputDir(outputPath);
 
@@ -71,6 +87,22 @@ export async function compressMedia(
 
     const videoBitrateK = totalBitrateK - audioBitrateK;
     videoEncoder = "libx264";
+
+    if (dryRun) {
+      return {
+        success: true,
+        outputPath: output,
+        originalSizeBytes: statsBefore.size,
+        compressedSizeBytes: Math.round(targetBytes),
+        compressionRatio: `~${((1 - (targetBytes / statsBefore.size)) * 100).toFixed(1)}% (projected)`,
+        hardwareAccelerated: false,
+        encoderUsed: videoEncoder,
+        commandExecuted: `ffmpeg -i ${input} ${scaleFilter ? `-vf "${scaleFilter}" ` : ""}-c:v libx264 -b:v ${videoBitrateK}k -pass 1/2 ${hasAudio ? `-c:a aac -b:a ${audioBitrateK}k ` : ""}-y ${output}`,
+        durationSeconds: duration,
+        dryRun: true,
+      };
+    }
+
     const passId = `ffmpeg-mcp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const passLog = path.join(os.tmpdir(), passId);
     const extension = path.extname(output);
@@ -129,6 +161,7 @@ export async function compressMedia(
     }
 
     const statsAfter = fs.statSync(output);
+    const verified = await verifyMediaOutput(output, { signal: options?.signal });
     return {
       success: true,
       outputPath: output,
@@ -139,6 +172,7 @@ export async function compressMedia(
       encoderUsed: videoEncoder,
       commandExecuted: result.command,
       durationSeconds: result.durationSeconds,
+      verified,
     };
   } else {
     let chosenCrf = 26;
@@ -178,26 +212,42 @@ export async function compressMedia(
       args.push("-c:a", "aac", "-b:a", "128k");
     }
     args.push("-movflags", "+faststart");
+    args.push("-y", output);
+
+    if (dryRun) {
+      return {
+        success: true,
+        outputPath: output,
+        originalSizeBytes: statsBefore.size,
+        compressedSizeBytes: 0,
+        compressionRatio: "unknown (dry run)",
+        hardwareAccelerated: isHwUsed,
+        encoderUsed: videoEncoder,
+        commandExecuted: `ffmpeg ${args.join(" ")}`,
+        durationSeconds: duration,
+        dryRun: true,
+      };
+    }
+
+    const result = await runFfmpeg(args, {
+      signal: options?.signal,
+      onProgress: options?.onProgress,
+      expectedDurationSeconds: duration,
+    });
+    const statsAfter = fs.statSync(output);
+    const verified = await verifyMediaOutput(output, { signal: options?.signal });
+
+    return {
+      success: true,
+      outputPath: output,
+      originalSizeBytes: statsBefore.size,
+      compressedSizeBytes: statsAfter.size,
+      compressionRatio: `${((1 - (statsAfter.size / statsBefore.size)) * 100).toFixed(1)}%`,
+      hardwareAccelerated: isHwUsed,
+      encoderUsed: videoEncoder,
+      commandExecuted: result.command,
+      durationSeconds: result.durationSeconds,
+      verified,
+    };
   }
-
-  args.push("-y", output);
-
-  const result = await runFfmpeg(args, {
-    signal: options?.signal,
-    onProgress: options?.onProgress,
-    expectedDurationSeconds: duration,
-  });
-  const statsAfter = fs.statSync(output);
-
-  return {
-    success: true,
-    outputPath: output,
-    originalSizeBytes: statsBefore.size,
-    compressedSizeBytes: statsAfter.size,
-    compressionRatio: `${((1 - (statsAfter.size / statsBefore.size)) * 100).toFixed(1)}%`,
-    hardwareAccelerated: isHwUsed,
-    encoderUsed: videoEncoder,
-    commandExecuted: result.command,
-    durationSeconds: result.durationSeconds,
-  };
 }

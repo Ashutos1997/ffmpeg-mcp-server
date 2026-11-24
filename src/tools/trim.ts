@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ensureFileExists, ensureOutputDir, runFfmpeg, FfmpegProgress } from "../utils/exec.js";
 import { detectHwAccel } from "../utils/hwaccel.js";
+import { verifyMediaOutput, VerifiedMediaOutput } from "../utils/verification.js";
 import { probeMedia } from "./probe.js";
 
 export const trimMediaSchema = z.object({
@@ -24,9 +25,21 @@ export const trimMediaSchema = z.object({
     .boolean()
     .optional()
     .describe("Re-encode video for cuts between keyframes. Default: false (uses fast stream copy)."),
+  dryRun: z
+    .boolean()
+    .optional()
+    .describe("Plan-before-encode: returns planned FFmpeg command, parameters, and target output without writing files."),
 });
 
 export type TrimMediaParams = z.infer<typeof trimMediaSchema>;
+
+export interface TrimMediaResult {
+  outputPath: string;
+  commandExecuted: string;
+  durationSeconds: number;
+  dryRun?: boolean;
+  verified?: VerifiedMediaOutput;
+}
 
 function timestampToSeconds(timestamp: string): number {
   const parts = timestamp.split(":").map(Number);
@@ -38,11 +51,7 @@ function timestampToSeconds(timestamp: string): number {
 export async function trimMedia(
   params: TrimMediaParams,
   options?: { signal?: AbortSignal; onProgress?: (p: FfmpegProgress) => void }
-): Promise<{
-  outputPath: string;
-  commandExecuted: string;
-  durationSeconds: number;
-}> {
+): Promise<TrimMediaResult> {
   const input = await ensureFileExists(params.inputPath);
   const output = await ensureOutputDir(params.outputPath);
 
@@ -97,15 +106,27 @@ export async function trimMedia(
 
   args.push(output);
 
+  if (params.dryRun) {
+    return {
+      outputPath: output,
+      commandExecuted: `ffmpeg ${args.join(" ")}`,
+      durationSeconds: durationToCut ?? 0,
+      dryRun: true,
+    };
+  }
+
   const res = await runFfmpeg(args, {
     signal: options?.signal,
     onProgress: options?.onProgress,
     expectedDurationSeconds: durationToCut,
   });
 
+  const verified = await verifyMediaOutput(output, { signal: options?.signal });
+
   return {
     outputPath: output,
     commandExecuted: res.command,
     durationSeconds: res.durationSeconds,
+    verified,
   };
 }

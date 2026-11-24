@@ -22,12 +22,21 @@ import { normalizeAudio, normalizeAudioSchema } from "./tools/normalize.js";
 import { addOverlay, addOverlaySchema } from "./tools/overlay.js";
 import { muxMedia, muxMediaSchema } from "./tools/mux.js";
 import { detectScenes, detectScenesSchema } from "./tools/detect_scenes.js";
+import { ffmpegDoctorSchema, runFfmpegDoctor } from "./tools/doctor.js";
 import { detectHwAccel } from "./utils/hwaccel.js";
 import { FfmpegProgress, runCommand } from "./utils/exec.js";
+import { VerifiedMediaOutput } from "./utils/verification.js";
+
+// Check if invoked as setup CLI
+if (process.argv.includes("setup") || process.argv[2] === "setup") {
+  const { runSetupCli } = await import("./cli/setup.js");
+  await runSetupCli();
+  process.exit(0);
+}
 
 const server = new McpServer({
   name: "ffmpeg-mcp-server",
-  version: "0.6.4",
+  version: "0.7.0",
 });
 
 function createProgressCallback(extra: any) {
@@ -48,6 +57,18 @@ function createProgressCallback(extra: any) {
         .catch(() => {});
     }
   };
+}
+
+function formatVerified(verified?: VerifiedMediaOutput): string {
+  if (!verified) return "";
+  let text = `\n\nVerified Output:\n- Size: ${verified.fileSizeFormatted} (${verified.fileSizeBytes} bytes)\n- Duration: ${verified.durationSeconds.toFixed(2)}s\n- Format: ${verified.formatName}`;
+  if (verified.video) {
+    text += `\n- Video: ${verified.video.codec} (${verified.video.resolution} @ ${verified.video.fps} fps)`;
+  }
+  if (verified.audio) {
+    text += `\n- Audio: ${verified.audio.codec} (${verified.audio.sampleRateHz} Hz, ${verified.audio.channels} ch)`;
+  }
+  return text;
 }
 
 // Tool 1: Probe Media
@@ -73,17 +94,27 @@ server.tool(
 // Tool 2: Convert Media
 server.tool(
   "media_convert",
-  "Convert video and audio files between formats. Includes presets for web MP4 (H.264/AAC), WebM (VP9/Opus), and animated GIF. Supports hardware acceleration on Apple Silicon, NVIDIA, Intel, and AMD.",
+  "Convert video and audio files between formats. Includes presets for web MP4 (H.264/AAC), WebM (VP9/Opus), animated GIF, Instagram Reels (9:16), and YouTube Shorts (9:16). Supports dryRun plan inspection and verified output probing.",
   convertMediaSchema.shape,
   async (args, extra) => {
     try {
       const onProgress = createProgressCallback(extra);
       const result = await convertMedia(args, { signal: extra.signal, onProgress });
+      if (result.dryRun) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `[DRY RUN - No file written]\nPlanned Command: ${result.commandExecuted}\nTarget Output: ${result.outputPath}\nEncoder: ${result.encoderUsed} (Hardware Accelerated: ${result.hardwareAccelerated})`,
+            },
+          ],
+        };
+      }
       return {
         content: [
           {
             type: "text",
-            text: `Successfully converted media:\nOutput: ${result.outputPath}\nEncoder: ${result.encoderUsed} (Hardware Accelerated: ${result.hardwareAccelerated})\nCommand: ${result.commandExecuted}`,
+            text: `Successfully converted media:\nOutput: ${result.outputPath}\nEncoder: ${result.encoderUsed} (Hardware Accelerated: ${result.hardwareAccelerated})\nCommand: ${result.commandExecuted}${formatVerified(result.verified)}`,
           },
         ],
       };
@@ -99,17 +130,27 @@ server.tool(
 // Tool 3: Trim Media
 server.tool(
   "trim_media",
-  "Cut a segment from a video or audio file. Uses stream copy without re-encoding by default, or re-encodes when accurate cuts are needed.",
+  "Cut a segment from a video or audio file. Uses stream copy without re-encoding by default, or re-encodes when accurate cuts are needed. Supports dryRun plan inspection and post-flight verification.",
   trimMediaSchema.shape,
   async (args, extra) => {
     try {
       const onProgress = createProgressCallback(extra);
       const result = await trimMedia(args, { signal: extra.signal, onProgress });
+      if (result.dryRun) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `[DRY RUN - No file written]\nPlanned Command: ${result.commandExecuted}\nTarget Output: ${result.outputPath}\nPlanned Duration: ${result.durationSeconds}s`,
+            },
+          ],
+        };
+      }
       return {
         content: [
           {
             type: "text",
-            text: `Successfully trimmed media:\nOutput: ${result.outputPath}\nCommand: ${result.commandExecuted}`,
+            text: `Successfully trimmed media:\nOutput: ${result.outputPath}\nCommand: ${result.commandExecuted}${formatVerified(result.verified)}`,
           },
         ],
       };
@@ -125,7 +166,7 @@ server.tool(
 // Tool 4: Extract Audio
 server.tool(
   "extract_audio",
-  "Extract an audio track from a video file into a standalone audio file. Supports the 'whisper_wav' preset (16kHz mono WAV) for speech recognition models, plus MP3, AAC, FLAC, and stream copy.",
+  "Extract an audio track from a video file into a standalone audio file. Supports the 'whisper_wav' preset (16kHz mono WAV) for speech recognition models, plus MP3, AAC, FLAC, and stream copy. Automatically verifies output properties.",
   extractAudioSchema.shape,
   async (args, extra) => {
     try {
@@ -135,7 +176,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text: `Successfully extracted audio:\nOutput: ${result.outputPath}\nFormat: ${result.format}\nCommand: ${result.commandExecuted}`,
+            text: `Successfully extracted audio:\nOutput: ${result.outputPath}\nFormat: ${result.format}\nCommand: ${result.commandExecuted}${formatVerified(result.verified)}`,
           },
         ],
       };
@@ -181,17 +222,27 @@ server.tool(
 // Tool 6: Compress Video
 server.tool(
   "compress_video",
-  "Compress video files to fit upload limits (such as GitHub PRs under 10MB or Discord under 25MB) using target file sizes or CRF quality levels. Does not modify the original file.",
+  "Compress video files to fit upload limits (such as GitHub PRs under 10MB or Discord under 25MB) using target file sizes or CRF quality levels. Supports dryRun and post-flight verification.",
   compressMediaSchema.shape,
   async (args, extra) => {
     try {
       const onProgress = createProgressCallback(extra);
       const result = await compressMedia(args, { signal: extra.signal, onProgress });
+      if (result.dryRun) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `[DRY RUN - No file written]\nPlanned Command: ${result.commandExecuted}\nTarget Output: ${result.outputPath}\nProjected Size: ${(result.compressedSizeBytes / (1024 * 1024)).toFixed(2)} MB (${result.compressionRatio})`,
+            },
+          ],
+        };
+      }
       return {
         content: [
           {
             type: "text",
-            text: `Successfully compressed video:\nOutput: ${result.outputPath}\nOriginal Size: ${(result.originalSizeBytes / (1024 * 1024)).toFixed(2)} MB\nCompressed Size: ${(result.compressedSizeBytes / (1024 * 1024)).toFixed(2)} MB (${result.compressionRatio} reduction)\nEncoder: ${result.encoderUsed} (Hardware Accelerated: ${result.hardwareAccelerated})\nCommand: ${result.commandExecuted}`,
+            text: `Successfully compressed video:\nOutput: ${result.outputPath}\nOriginal Size: ${(result.originalSizeBytes / (1024 * 1024)).toFixed(2)} MB\nCompressed Size: ${(result.compressedSizeBytes / (1024 * 1024)).toFixed(2)} MB (${result.compressionRatio} reduction)\nEncoder: ${result.encoderUsed} (Hardware Accelerated: ${result.hardwareAccelerated})\nCommand: ${result.commandExecuted}${formatVerified(result.verified)}`,
           },
         ],
       };
@@ -207,17 +258,27 @@ server.tool(
 // Tool 7: Concat Media
 server.tool(
   "concat_media",
-  "Join multiple video or audio files in order into a single file. Uses stream copy for matching files or re-encodes when formats differ.",
+  "Join multiple video or audio files in order into a single file. Uses stream copy for matching files or re-encodes when formats differ. Supports dryRun and post-flight verification.",
   concatMediaSchema.shape,
   async (args, extra) => {
     try {
       const onProgress = createProgressCallback(extra);
       const result = await concatMedia(args, { signal: extra.signal, onProgress });
+      if (result.dryRun) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `[DRY RUN - No file written]\nPlanned Command: ${result.commandExecuted}\nTarget Output: ${result.outputPath}\nTotal Inputs: ${result.totalInputs}\nStrategy: ${result.strategyUsed}`,
+            },
+          ],
+        };
+      }
       return {
         content: [
           {
             type: "text",
-            text: `Successfully concatenated ${result.totalInputs} clips:\nOutput: ${result.outputPath}\nMode: ${result.mode}\nCommand: ${result.commandExecuted}`,
+            text: `Successfully concatenated ${result.totalInputs} clips:\nOutput: ${result.outputPath}\nMode: ${result.mode}\nCommand: ${result.commandExecuted}${formatVerified(result.verified)}`,
           },
         ],
       };
@@ -260,7 +321,7 @@ server.tool(
   }
 );
 
-// Tool 9: Add Subtitles (Soft Embedded)
+// Tool 9: Add Subtitles (Soft Streams)
 server.tool(
   "add_subtitles",
   "Embed an SRT or VTT subtitle track into a video container (mov_text for MP4, srt for MKV) without re-encoding the video stream.",
@@ -306,7 +367,7 @@ server.tool(
     } catch (err: any) {
       return {
         isError: true,
-        content: [{ type: "text", text: `Error changing playback speed: ${err.message}` }],
+        content: [{ type: "text", text: `Error changing speed: ${err.message}` }],
       };
     }
   }
@@ -315,17 +376,27 @@ server.tool(
 // Tool 11: Reformat Aspect Ratio
 server.tool(
   "reformat_aspect_ratio",
-  "Change video aspect ratio to 9:16 vertical, 1:1 square, or 4:5 portrait. Adds blurred video borders, solid padding, or center crops.",
+  "Change video aspect ratio to 9:16 vertical, 1:1 square, or 4:5 portrait. Adds blurred video borders, solid padding, or center crops. Supports dryRun and post-flight verification.",
   reformatAspectSchema.shape,
   async (args, extra) => {
     try {
       const onProgress = createProgressCallback(extra);
       const result = await reformatAspectRatio(args, { signal: extra.signal, onProgress });
+      if (result.dryRun) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `[DRY RUN - No file written]\nPlanned Command: ${result.commandExecuted}\nTarget Output: ${result.outputPath}\nTarget Ratio: ${result.targetRatio} (${result.targetResolution})\nMode: ${result.mode}`,
+            },
+          ],
+        };
+      }
       return {
         content: [
           {
             type: "text",
-            text: `Successfully reformatted video aspect ratio:\nOutput: ${result.outputPath}\nTarget Ratio: ${result.targetRatio} (${result.resolution})\nMode: ${result.mode}\nEncoder: ${result.encoderUsed} (Hardware Accelerated: ${result.hardwareAccelerated})\nCommand: ${result.commandExecuted}`,
+            text: `Successfully reformatted video aspect ratio:\nOutput: ${result.outputPath}\nTarget Ratio: ${result.targetRatio} (${result.targetResolution})\nMode: ${result.mode}\nEncoder: ${result.encoderUsed} (Hardware Accelerated: ${result.hardwareAccelerated})\nCommand: ${result.commandExecuted}${formatVerified(result.verified)}`,
           },
         ],
       };
@@ -449,7 +520,7 @@ server.tool(
 // Tool 16: Normalize Audio (Loudnorm / EBU R128)
 server.tool(
   "normalize_audio",
-  "Normalize audio loudness using the broadcast standard EBU R128 (loudnorm). Supports -16 LUFS (podcasts/Reels), -14 LUFS (YouTube), and optional voice clarity enhancement (80Hz high-pass to remove mic rumble). Works on audio or video files.",
+  "Normalize audio loudness using the broadcast standard EBU R128 (loudnorm). Supports -16 LUFS (podcasts/Reels), -14 LUFS (YouTube), and optional voice clarity enhancement (80Hz high-pass to remove mic rumble). Works on audio or video files with post-flight verification.",
   normalizeAudioSchema.shape,
   async (args, extra) => {
     try {
@@ -459,7 +530,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text: `Successfully normalized audio loudness:\nOutput: ${result.outputPath}\nTarget LUFS: ${result.targetLufs} LUFS (Peak: ${result.targetPeakDb} dBTP)\nVoice Clarity: ${result.voiceClarityEnabled ? "Enabled" : "Disabled"}\nMedia Type: ${result.isVideo ? "Video (lossless video stream copy)" : "Audio"}\nCommand: ${result.commandExecuted}`,
+            text: `Successfully normalized audio loudness:\nOutput: ${result.outputPath}\nTarget LUFS: ${result.targetLufs} LUFS (Peak: ${result.targetPeakDb} dBTP)\nVoice Clarity: ${result.voiceClarityEnabled ? "Enabled" : "Disabled"}\nMedia Type: ${result.isVideo ? "Video (lossless video stream copy)" : "Audio"}\nCommand: ${result.commandExecuted}${formatVerified(result.verified)}`,
           },
         ],
       };
@@ -498,10 +569,10 @@ server.tool(
   }
 );
 
-// Tool 18: Mux Media
+// Tool 18: Mux Media (Replace/Add Audio Tracks)
 server.tool(
   "mux_media",
-  "Combine or replace video and audio streams. Takes a video file and an audio track, with optional audio delay offset, stream-copy mode for zero quality loss, and 'replace' or 'add' stream mapping.",
+  "Multiplex (mux) an audio track into a video file or combine standalone video and audio streams. Supports replacing audio, mixing, and instantaneous stream copy without re-encoding video.",
   muxMediaSchema.shape,
   async (args, extra) => {
     try {
@@ -511,7 +582,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text: `Successfully muxed media:\nOutput: ${result.outputPath}\nMode: ${result.mode}\nEncoder: ${result.encoderUsed} (Hardware Accelerated: ${result.hardwareAccelerated})\nAudio Offset: ${result.audioOffsetSeconds}s\nCommand: ${result.commandExecuted}`,
+            text: `Successfully muxed media:\nOutput: ${result.outputPath}\nMode: ${result.mode}\nEncoder: ${result.encoderUsed}\nCommand: ${result.commandExecuted}`,
           },
         ],
       };
@@ -561,6 +632,26 @@ server.tool(
   }
 );
 
+// Tool 20: FFmpeg Doctor & Diagnostics
+server.tool(
+  "ffmpeg_doctor",
+  "Comprehensive diagnostics for FFmpeg environment: detects binary paths, versions, hardware acceleration capabilities, audio/video codecs, and critical filters (libass, loudnorm, silencedetect) with automated health checks and fix recommendations.",
+  ffmpegDoctorSchema.shape,
+  async (args, extra) => {
+    try {
+      const report = await runFfmpegDoctor(args, { signal: extra.signal });
+      return {
+        content: [{ type: "text", text: JSON.stringify(report, null, 2) }],
+      };
+    } catch (err: any) {
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Error running ffmpeg_doctor: ${err.message}` }],
+      };
+    }
+  }
+);
+
 // Resource 1: Capabilities & Hardware Info
 server.registerResource(
   "system_capabilities",
@@ -589,7 +680,7 @@ server.registerResource(
         hevcEncoder: hwInfo.hevcEncoder,
       },
       availableEncoders: hwInfo.encoders,
-      totalToolsActive: 19,
+      totalToolsActive: 20,
     };
 
     return {
@@ -669,11 +760,12 @@ Source Video: ${inputPath}
 ${subtitlesPath ? `Subtitles: ${subtitlesPath}` : "No separate subtitles provided."}
 
 Recommended workflow:
-1. Use 'media_probe' to check duration and resolution.
-2. Use 'reformat_aspect_ratio' with targetRatio: '9:16' and mode: 'blur_background'.
-3. Use 'trim_silence' with mode: 'start_end' to eliminate dead air at the beginning and end.
-4. If subtitles are available, use 'burn_subtitles' to hardcode visible captions for mobile viewers.
-5. Use 'normalize_audio' with targetLufs: -16 to ensure consistent loudness.`,
+1. Use 'ffmpeg_doctor' to verify system health and libass subtitle filter availability.
+2. Use 'media_probe' to check duration and resolution.
+3. Use 'reformat_aspect_ratio' with targetRatio: '9:16' and mode: 'blur_background' (supports dryRun: true to preview).
+4. Use 'trim_silence' with mode: 'start_end' to eliminate dead air at the beginning and end.
+5. If subtitles are available, use 'burn_subtitles' to hardcode visible captions for mobile viewers.
+6. Use 'normalize_audio' with targetLufs: -16 to ensure consistent loudness.`,
           },
         },
       ],
@@ -712,7 +804,7 @@ server.registerPrompt(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("FFmpeg MCP Server running on stdio (19 tools, 2 resources, 2 prompts active)");
+  console.error("FFmpeg MCP Server running on stdio (20 tools, 2 resources, 2 prompts active)");
 }
 
 main().catch((err) => {

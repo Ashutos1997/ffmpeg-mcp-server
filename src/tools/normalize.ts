@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ensureFileExists, ensureOutputDir, runFfmpeg, FfmpegProgress } from "../utils/exec.js";
+import { verifyMediaOutput, VerifiedMediaOutput } from "../utils/verification.js";
 import { probeMedia } from "./probe.js";
 
 export const normalizeAudioSchema = z.object({
@@ -28,10 +29,22 @@ export const normalizeAudioSchema = z.object({
 
 export type NormalizeAudioParams = z.infer<typeof normalizeAudioSchema>;
 
+export interface NormalizeAudioResult {
+  success: boolean;
+  outputPath: string;
+  targetLufs: number;
+  targetPeakDb: number;
+  voiceClarityEnabled: boolean;
+  isVideo: boolean;
+  commandExecuted: string;
+  durationSeconds: number;
+  verified?: VerifiedMediaOutput;
+}
+
 export async function normalizeAudio(
   params: NormalizeAudioParams,
   options?: { signal?: AbortSignal; onProgress?: (p: FfmpegProgress) => void }
-) {
+): Promise<NormalizeAudioResult> {
   const { inputPath, outputPath, targetLufs = -16, targetPeakDb = -1.5, voiceClarity = false } = params;
 
   const input = await ensureFileExists(inputPath);
@@ -75,6 +88,8 @@ export async function normalizeAudio(
     expectedDurationSeconds: duration,
   });
 
+  const verified = await verifyMediaOutput(output, { signal: options?.signal });
+
   return {
     success: true,
     outputPath: output,
@@ -84,5 +99,6 @@ export async function normalizeAudio(
     isVideo,
     commandExecuted: res.command,
     durationSeconds: res.durationSeconds,
+    verified,
   };
 }

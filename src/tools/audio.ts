@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ensureFileExists, ensureOutputDir, runFfmpeg, FfmpegProgress } from "../utils/exec.js";
+import { verifyMediaOutput, VerifiedMediaOutput } from "../utils/verification.js";
 import { probeMedia } from "./probe.js";
 
 export const extractAudioSchema = z.object({
@@ -14,15 +15,18 @@ export const extractAudioSchema = z.object({
 
 export type ExtractAudioParams = z.infer<typeof extractAudioSchema>;
 
-export async function extractAudio(
-  params: ExtractAudioParams,
-  options?: { signal?: AbortSignal; onProgress?: (p: FfmpegProgress) => void }
-): Promise<{
+export interface ExtractAudioResult {
   outputPath: string;
   format: string;
   commandExecuted: string;
   durationSeconds: number;
-}> {
+  verified?: VerifiedMediaOutput;
+}
+
+export async function extractAudio(
+  params: ExtractAudioParams,
+  options?: { signal?: AbortSignal; onProgress?: (p: FfmpegProgress) => void }
+): Promise<ExtractAudioResult> {
   const input = await ensureFileExists(params.inputPath);
   const output = await ensureOutputDir(params.outputPath);
 
@@ -65,10 +69,13 @@ export async function extractAudio(
     expectedDurationSeconds: probe.format.durationSeconds,
   });
 
+  const verified = await verifyMediaOutput(output, { signal: options?.signal });
+
   return {
     outputPath: output,
     format,
     commandExecuted: res.command,
     durationSeconds: res.durationSeconds,
+    verified,
   };
 }

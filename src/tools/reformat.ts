@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ensureFileExists, ensureOutputDir, runFfmpeg, FfmpegProgress } from "../utils/exec.js";
 import { detectHwAccel } from "../utils/hwaccel.js";
+import { verifyMediaOutput, VerifiedMediaOutput } from "../utils/verification.js";
 import { probeMedia } from "./probe.js";
 
 export const reformatAspectSchema = z.object({
@@ -29,9 +30,27 @@ export const reformatAspectSchema = z.object({
     .boolean()
     .optional()
     .describe("Use hardware-accelerated video encoding (VideoToolbox, NVENC, QSV, etc.) when available. Default: true."),
+  dryRun: z
+    .boolean()
+    .optional()
+    .describe("Plan-before-encode: returns planned FFmpeg command, parameters, and target output without writing files."),
 });
 
 export type ReformatAspectArgs = z.infer<typeof reformatAspectSchema>;
+
+export interface ReformatAspectResult {
+  success: boolean;
+  outputPath: string;
+  targetRatio: string;
+  targetResolution: string;
+  mode: string;
+  hardwareAccelerated: boolean;
+  encoderUsed: string;
+  commandExecuted: string;
+  durationSeconds: number;
+  dryRun?: boolean;
+  verified?: VerifiedMediaOutput;
+}
 
 const RATIO_DIMENSIONS: Record<string, { width: number; height: number }> = {
   "9:16": { width: 1080, height: 1920 },
@@ -43,7 +62,7 @@ const RATIO_DIMENSIONS: Record<string, { width: number; height: number }> = {
 export async function reformatAspectRatio(
   args: ReformatAspectArgs,
   options?: { signal?: AbortSignal; onProgress?: (p: FfmpegProgress) => void }
-) {
+): Promise<ReformatAspectResult> {
   const input = await ensureFileExists(args.inputPath);
   const output = await ensureOutputDir(args.outputPath);
 
@@ -94,21 +113,39 @@ export async function reformatAspectRatio(
 
   ffmpegArgs.push("-movflags", "+faststart", "-y", output);
 
+  if (args.dryRun) {
+    return {
+      success: true,
+      outputPath: output,
+      targetRatio,
+      targetResolution: `${tw}x${th}`,
+      mode,
+      hardwareAccelerated: isHwUsed,
+      encoderUsed: videoEncoder,
+      commandExecuted: `ffmpeg ${ffmpegArgs.join(" ")}`,
+      durationSeconds: duration,
+      dryRun: true,
+    };
+  }
+
   const res = await runFfmpeg(ffmpegArgs, {
     signal: options?.signal,
     onProgress: options?.onProgress,
     expectedDurationSeconds: duration,
   });
 
+  const verified = await verifyMediaOutput(output, { signal: options?.signal });
+
   return {
     success: true,
     outputPath: output,
     targetRatio,
+    targetResolution: `${tw}x${th}`,
     mode,
-    resolution: `${tw}x${th}`,
-    encoderUsed: videoEncoder,
     hardwareAccelerated: isHwUsed,
+    encoderUsed: videoEncoder,
     commandExecuted: res.command,
     durationSeconds: res.durationSeconds,
+    verified,
   };
 }
